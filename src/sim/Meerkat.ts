@@ -21,7 +21,21 @@ export type MState =
   | 'Mobbing'
   | 'Startled'
   | 'Dizzy'
-  | 'Held';
+  | 'Held'
+  /** Dramatic Faint quirk: a theatrical pause before running from an alarm. */
+  | 'Fainting'
+  /** Sunbather quirk: a long morning stretch on a warm rock. */
+  | 'Stretching'
+  /** Scorpion pinch: the comical hopping "ouch!" dance. */
+  | 'Ouch'
+  /** Tail-Dodge & Flip team waiting beside a scorpion. */
+  | 'Flipping'
+  /** Pups bouncing around the Playroom. */
+  | 'Playing'
+  /** Squad Whistle: trotting in a follow-line behind the Alpha. */
+  | 'Following'
+  /** The Alpha scout under direct gamepad control. */
+  | 'Led';
 
 export type Intent =
   | 'dig'
@@ -35,7 +49,11 @@ export type Intent =
   | 'wander'
   | 'hide'
   | 'rally'
-  | 'home';
+  | 'home'
+  | 'stretch'
+  | 'flip'
+  | 'play'
+  | 'follow';
 
 export interface Palette {
   name: string;
@@ -56,6 +74,27 @@ export const NAMES = [
   'Pip', 'Sunny', 'Biscuit', 'Dune', 'Mango', 'Pebble', 'Juniper', 'Taro',
   'Nutmeg', 'Kiki', 'Zuri', 'Tumble', 'Saffron', 'Ziggy', 'Acacia', 'Moss',
 ];
+
+export type Trait = 'eagleeyed' | 'tunnelrat' | 'greenpaw' | 'sandkicker' | 'ironstomach';
+export type Quirk = 'faint' | 'collector' | 'sunbather' | 'chatterbox' | 'clumsy';
+
+/** Spec 7.2: every meerkat has one Skill Trait and one Comedy Quirk. */
+export const TRAITS: Record<Trait, { name: string; icon: string; blurb: string }> = {
+  eagleeyed: { name: 'Eagle-Eyed', icon: '👁️', blurb: '+25% Sentry radar; spots hidden snakes from far away' },
+  tunnelrat: { name: 'Tunnel Rat', icon: '🐀', blurb: '+30% speed underground; never slowed by sandstorms' },
+  greenpaw: { name: 'Green Paw', icon: '🌿', blurb: '+20% Crystal Conservatory growth' },
+  sandkicker: { name: 'Sand-Kicker', icon: '💨', blurb: 'Counts as 2 meerkats in a Sand-Kick Mob' },
+  ironstomach: { name: 'Iron Stomach', icon: '🥔', blurb: 'Munches bitter roots in the Long Dry: no pantry food needed' },
+};
+export const QUIRKS: Record<Quirk, { name: string; icon: string; blurb: string }> = {
+  faint: { name: 'Dramatic Faint', icon: '😱', blurb: 'Swoons for a moment when an alarm sounds (pups find it hilarious)' },
+  collector: { name: 'Gourd Collector', icon: '🐚', blurb: 'Brings home shiny pebbles and shells: pageant decor points' },
+  sunbather: { name: 'Sunbather', icon: '🌞', blurb: 'Stretches on a warm rock each morning: +15% work speed that afternoon' },
+  chatterbox: { name: 'Chatterbox', icon: '💬', blurb: 'Squeaks while working: coworkers nearby work 10% faster and cheer up' },
+  clumsy: { name: 'Clumsy Hopper', icon: '🤸', blurb: 'Trips once a day and scatters snacks; pups love chasing them' },
+};
+export const TRAIT_KINDS = Object.keys(TRAITS) as Trait[];
+export const QUIRK_KINDS = Object.keys(QUIRKS) as Quirk[];
 
 export interface Pack {
   items: number;
@@ -113,9 +152,46 @@ export interface Meerkat {
   kicking: boolean;
   notice: string;
   noticeTimer: number;
+  trait: Trait;
+  quirk: Quirk;
+  /** Pups don't work: they play, follow a mentor, and grow up. */
+  pup: boolean;
+  /** Pup maturity 0..1. */
+  growth: number;
+  /** How much of that growth happened while shadowing the mentor. */
+  mentored: number;
+  mentorId: number | null;
+  /** Last day the quirk fired (Sunbather stretch, Clumsy trip). */
+  quirkDay: number;
+  /** Scorpion this meerkat is helping to flip. */
+  targetId: number | null;
+  /** Role Mastery: seconds of work done in each role (stars via masteryStars). */
+  mastery: Record<Role, number>;
 }
 
-export function makeMeerkat(id: number, name: string, palette: number, role: Role, cx: number, cy: number): Meerkat {
+/** 1–5 Role Mastery stars from seconds of work (spec 7.1). */
+export function masteryStars(seconds: number, steps: readonly number[]): number {
+  let s = 1;
+  for (const t of steps) if (seconds >= t) s++;
+  return s;
+}
+
+export const MASTERY_PERKS: Record<Role, string[]> = {
+  Sentry: ['+6% radar range per star', '4★: spots buried loot in range', '5★: eagles hover 1.5s longer before swooping'],
+  Forager: ['+5% dune sprinting per star', '3★: +1 backpack slot', '5★: can Tail-Dodge & Flip a scorpion solo'],
+  Digger: ['+10% digging per star', '4★: +50% in hard Long Dry soil', 'More gems while digging (+25% per star)'],
+};
+
+export function makeMeerkat(
+  id: number,
+  name: string,
+  palette: number,
+  role: Role,
+  cx: number,
+  cy: number,
+  trait: Trait = 'eagleeyed',
+  quirk: Quirk = 'chatterbox',
+): Meerkat {
   return {
     id,
     name,
@@ -144,5 +220,14 @@ export function makeMeerkat(id: number, name: string, palette: number, role: Rol
     kicking: false,
     notice: '',
     noticeTimer: 0,
+    trait,
+    quirk,
+    pup: false,
+    growth: 1,
+    mentored: 0,
+    mentorId: null,
+    quirkDay: 0,
+    targetId: null,
+    mastery: { Sentry: 0, Forager: 0, Digger: 0 },
   };
 }

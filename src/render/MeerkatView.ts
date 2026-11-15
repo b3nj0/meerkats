@@ -39,6 +39,15 @@ export function drawMeerkat(g: Phaser.GameObjects.Graphics, p: Palette): void {
 
 function drawAccessory(g: Phaser.GameObjects.Graphics, m: Meerkat): void {
   g.clear();
+  if (m.pup) {
+    // a little tuft and big eyes
+    g.fillStyle(0xfff7e6, 1);
+    g.fillCircle(2.8, -13.3, 0.7);
+    g.lineStyle(0.6, 0x5a4126, 1);
+    g.lineBetween(0.5, -15, 0, -16.5);
+    g.lineBetween(1.3, -15, 1.6, -16.6);
+    return;
+  }
   const role: Role = m.role;
   const items = m.pack.items;
   // status marks under the gear
@@ -52,7 +61,13 @@ function drawAccessory(g: Phaser.GameObjects.Graphics, m: Meerkat): void {
     g.fillCircle(-4, -2, 0.8);
     g.fillCircle(-7, 0.2, 0.7);
   }
-  if (m.gear.back === 'gourdpack') {
+  if (m.gear.back === 'pouch') {
+    g.fillStyle(0x8a5cc4, 1);
+    g.fillEllipse(-3.8, -7, 5.4, 7.8);
+    g.fillStyle(0x8fd3ff, 1);
+    g.fillTriangle(-5.4, -10.4, -2.2, -10.4, -3.8, -8);
+    g.fillCircle(-3.8, -5, 0.8);
+  } else if (m.gear.back === 'gourdpack') {
     g.fillStyle(0xd9b25f, 1);
     g.fillEllipse(-3.8, -7, 5, 7.4);
     g.fillStyle(0xb38a3a, 1);
@@ -79,6 +94,22 @@ function drawAccessory(g: Phaser.GameObjects.Graphics, m: Meerkat): void {
     g.fillCircle(2.6, -13.2, 1.35);
     g.fillStyle(0xfff0b0, 1);
     g.fillCircle(2.9, -13.6, 0.4);
+  }
+  if (m.gear.eyes === 'monocle') {
+    g.lineStyle(0.7, 0x8b5a2b, 1);
+    g.strokeCircle(2.7, -13.2, 1.3);
+    g.lineStyle(0.4, 0xd9b25f, 1);
+    g.lineBetween(2.2, -12, 1.4, -8.5);
+  }
+  if (m.gear.head === 'crown') {
+    const cols = [0xffe14d, 0xff8ac6, 0xffffff, 0x8fd3ff, 0xff8ac6];
+    g.lineStyle(0.7, 0x5d9b3a, 1);
+    g.strokeEllipse(1, -14.8, 6.8, 2.2);
+    cols.forEach((c, i) => {
+      g.fillStyle(c, 1);
+      g.fillCircle(-2 + i * 1.5, -15.4 - (i % 2) * 0.5, 0.75);
+    });
+    return;
   }
   if (m.gear.head === 'sunhat') {
     g.fillStyle(0xe8c66a, 1);
@@ -109,7 +140,7 @@ function drawAccessory(g: Phaser.GameObjects.Graphics, m: Meerkat): void {
 
 function signature(m: Meerkat): string {
   const s = m.status;
-  return `${m.role}|${m.pack.items}|${m.gear.head}|${m.gear.eyes}|${m.gear.back}|${s.dusty}|${s.burrs}`;
+  return `${m.role}|${m.pup}|${m.pack.items}|${m.gear.head}|${m.gear.eyes}|${m.gear.back}|${s.dusty}|${s.burrs}`;
 }
 
 export class MeerkatView {
@@ -140,8 +171,9 @@ export class MeerkatView {
     this.root.add([this.body, this.fx, this.bubble, this.label]);
   }
 
-  update(m: Meerkat, time: number, offsetY: number, showName: boolean, sweaty: boolean, swimming = false): void {
+  update(m: Meerkat, time: number, offsetY: number, showName: boolean, sweaty: boolean, swimming = false, alpha = false): void {
     this.root.setPosition(m.x * S, (m.y + 0.5) * S + offsetY);
+    this.root.setScale(m.pup ? 0.62 : 1);
     const sig = signature(m);
     if (sig !== this.sig) {
       this.sig = sig;
@@ -167,6 +199,33 @@ export class MeerkatView {
         if (m.path.length === 0) b.y = 0;
         break;
       }
+      case 'Following':
+      case 'Led':
+        b.y = -Math.abs(Math.sin(time * 0.025)) * 1.6;
+        break;
+      case 'Playing':
+        b.y = -Math.abs(Math.sin(time * 0.012)) * 6;
+        b.rotation = Math.sin(time * 0.006) * 0.3;
+        break;
+      case 'Fainting':
+        b.rotation = -(Math.PI / 2.4) * m.facing;
+        b.y = -2;
+        break;
+      case 'Stretching':
+        b.rotation = (Math.PI / 2) * m.facing;
+        b.y = -3;
+        b.scaleX = m.facing * 1.25;
+        if (!bubble && Math.floor(time / 900) % 2 === 0) bubble = '~';
+        break;
+      case 'Ouch':
+        b.y = -Math.abs(Math.sin(time * 0.02)) * 5;
+        b.rotation = Math.sin(time * 0.02) * 0.3;
+        if (!bubble) bubble = 'ouch!';
+        break;
+      case 'Flipping':
+        b.rotation = Math.sin(time * 0.03) * 0.2;
+        b.scaleY = 1.12;
+        break;
       case 'Sleeping':
       case 'Napping':
         b.rotation = (Math.PI / 2) * m.facing;
@@ -244,6 +303,12 @@ export class MeerkatView {
       fx.fillCircle(4 * Math.cos(time * 0.003), -9 + 4 * Math.sin(time * 0.004), 0.8);
     }
 
+    if (alpha) {
+      fx.lineStyle(0.8, 0xffe14d, 0.9);
+      fx.strokeEllipse(0, 0.5, 13, 3.5);
+      fx.fillStyle(0xffe14d, 1);
+      fx.fillTriangle(-1.5, -22, 1.5, -22, 0, -19.5);
+    }
     if (m.warning > 0) {
       fx.fillStyle(0x000000, 0.5);
       fx.fillRect(-6, -21, 12, 2.5);

@@ -3,14 +3,17 @@ import { AlarmEventBus } from './AlarmEventBus';
 import { Clock, type Phase } from './Clock';
 import { Grid, T } from './Grid';
 import { JobQueue, type Job } from './JobQueue';
-import { makeMeerkat, NAMES, PALETTES, type Intent, type Meerkat, type MState, type Role } from './Meerkat';
+import { makeMeerkat, masteryStars, NAMES, PALETTES, QUIRK_KINDS, TRAIT_KINDS, TRAITS, type Intent, type Meerkat, type MState, type Role } from './Meerkat';
 import { arrive, onAlert, rallyOffsets, updateMeerkat } from './MeerkatBrain';
 import { bfs, pathFrom, type BfsResult } from './Pathfinder';
 import { cobraLeave, spawnCobra, triggerAmbush, updateCobra, type Cobra } from './predators/Cobra';
 import { eagleGroundX, spawnEagle, updateEagle, type Eagle } from './predators/Eagle';
+import { jackalLeave, spawnJackal, updateJackal, type Jackal } from './predators/Jackal';
+import { spawnScorpion, updateScorpion, type Scorpion } from './predators/Scorpion';
+import { spawnBadger, updateBadger, type Badger } from './predators/Badger';
 import { Rng } from './rng';
 import { GEAR, type GearKind, type GearSlot } from './Gear';
-import { MINIGAME_NAMES, ROOM_DEFS, roomContains, roomsAdjacent, SYNERGIES, type MiniGameKind, type Room, type RoomType, type SynergyDef, type Theme } from './Rooms';
+import { MINIGAME_NAMES, ROOM_DEFS, roomContains, roomsAdjacent, SYNERGIES, WONDERS, type MiniGameKind, type Room, type RoomType, type SynergyDef, type Theme } from './Rooms';
 import { makeNeighbors, RES_ICON, RES_VALUE, VISITOR_NAMES, type NeighborPack, type Res, type TradeOffer, type Visitor } from './Neighbors';
 import { RIBBON_LABEL, scorePageant, type PageantResult, type Ribbon } from './Pageant';
 import { GEAR_KINDS } from './Gear';
@@ -19,7 +22,8 @@ import { makeNode, type NodeType, type ResourceNode } from './Surface';
 
 export type Tone = 'info' | 'warn' | 'good';
 export type SfxName =
-  | 'whistle' | 'chirp' | 'horn' | 'snatch' | 'success' | 'join' | 'sneeze' | 'build' | 'leap' | 'pop' | 'error' | 'sniff' | 'gem';
+  | 'whistle' | 'chirp' | 'horn' | 'snatch' | 'success' | 'join' | 'sneeze' | 'build' | 'leap' | 'pop' | 'error' | 'sniff' | 'gem'
+  | 'bark' | 'hum' | 'click' | 'ouch' | 'thud' | 'splash' | 'munch';
 
 export type WorldEvent =
   | { kind: 'toast'; text: string; tone: Tone }
@@ -35,7 +39,13 @@ export interface MiniGameResult {
   tags?: { berry: number; loot: number; shadow: number };
   /** Burr Brush: who was groomed. */
   targetId?: number;
+  /** Feast Frenzy: the neighbouring mob that came to dinner. */
+  packId?: number;
 }
+
+/** Food spent to host a formal feast in the Grand Banquet Hall. */
+export const FEAST_COST = 6;
+export const SAVE_VERSION = 1;
 
 export interface WorldOptions {
   seed?: number;
@@ -52,7 +62,8 @@ function defaultRoles(n: number): Role[] {
   return out;
 }
 
-const DUSK_RECALL: MState[] = ['Gathering', 'Posted', 'Waiting', 'Huddling', 'Walking', 'Building'];
+const DUSK_RECALL: MState[] = ['Gathering', 'Posted', 'Waiting', 'Huddling', 'Walking', 'Building', 'Stretching', 'Flipping', 'Following', 'Led', 'Playing'];
+const WORKING: MState[] = ['Digging', 'Building', 'Gathering'];
 
 /** The whole simulation. Pure TypeScript: no rendering or browser dependencies. */
 export class World {
@@ -66,6 +77,20 @@ export class World {
   meerkats: Meerkat[] = [];
   eagles: Eagle[] = [];
   cobras: Cobra[] = [];
+  jackals: Jackal[] = [];
+  scorpions: Scorpion[] = [];
+  badgers: Badger[] = [];
+  jackalTimer: number = CFG.JACKAL.firstDelay;
+  badgerTimer = 60;
+  /** Day the colony last knocked down a wild honeycomb for a badger. */
+  honeyDay = 0;
+  /** Shiny pebbles and shells from Gourd Collectors: pageant decor. */
+  trinkets = 0;
+  /** Gamepad: the Alpha scout under direct control, its follow-line, and the stick. */
+  alphaId: number | null = null;
+  squad = new Set<number>();
+  leadStick = { x: 0, y: 0 };
+  private leadIdle = 0;
 
   food: number = CFG.START_FOOD;
   morale = 60;
@@ -74,7 +99,7 @@ export class World {
   eagleTimer: number = CFG.EAGLE.firstDelay;
   cobraTimer: number = CFG.COBRA.firstDelay;
   autoPredators: boolean;
-  stats = { dug: 0, boltHoles: 0, eaglesEvaded: 0, eaglesBonked: 0, mobs: 0, gathered: 0, crafted: 0, miniGames: 0, sniffs: 0, seasons: 1, pageants: 0, trades: 0, bestRibbon: 'none' as Ribbon };
+  stats = { dug: 0, boltHoles: 0, eaglesEvaded: 0, eaglesBonked: 0, mobs: 0, gathered: 0, crafted: 0, miniGames: 0, sniffs: 0, seasons: 1, pageants: 0, trades: 0, pups: 0, flips: 0, decoys: 0, honey: 0, feasts: 0, bestRibbon: 'none' as Ribbon };
   materials = { grass: 0, gems: 0 };
   /** Colony Prestige: earned from the Amphitheater and pageant ribbons; unlocks Tier 3 blueprints. */
   prestige = 0;
@@ -86,7 +111,9 @@ export class World {
   visitorTimer = 50;
   lastPageant: PageantResult | null = null;
   private growTimer = 20;
-  gearStock: Record<GearKind, number> = { sunhat: 0, helmet: 0, goggles: 0, gourdpack: 0 };
+  /** Separate stream for traits and quirks so they don't disturb the main simulation rng. */
+  private traitRng: Rng;
+  gearStock: Record<GearKind, number> = { sunhat: 0, helmet: 0, crown: 0, goggles: 0, monocle: 0, gourdpack: 0, pouch: 0 };
   /** Horizon Spotter reward: radar boost for the rest of this day. */
   radarBoostDay = 0;
   weather: Weather = 'clear';
@@ -105,6 +132,7 @@ export class World {
 
   constructor(opts: WorldOptions = {}) {
     this.rng = new Rng(opts.seed ?? 1);
+    this.traitRng = new Rng(((opts.seed ?? 1) * 7919 + 13) >>> 0);
     this.autoPredators = opts.autoPredators ?? true;
     this.grid = new Grid(CFG.W, CFG.H, SY);
     this.grid.generate(this.rng);
@@ -171,7 +199,16 @@ export class World {
     const used = new Set(this.meerkats.map((m) => m.name));
     const free = NAMES.filter((n) => !used.has(n));
     const name = free.length ? this.rng.pick(free) : `Kit ${this.meerkats.length + 1}`;
-    const m = makeMeerkat(this.newId(), name, this.rng.int(0, PALETTES.length - 1), role, cx, cy);
+    const m = makeMeerkat(
+      this.newId(),
+      name,
+      this.rng.int(0, PALETTES.length - 1),
+      role,
+      cx,
+      cy,
+      this.traitRng.pick(TRAIT_KINDS),
+      this.traitRng.pick(QUIRK_KINDS),
+    );
     this.meerkats.push(m);
     this.bus.subscribe({ id: m.id, pos: () => ({ x: m.x, y: m.y }), onAlert: (a) => onAlert(this, m, a) });
     return m;
@@ -217,6 +254,9 @@ export class World {
   }
   speedMult(m: Meerkat): number {
     let k = 1;
+    if (m.trait === 'tunnelrat' && !this.onSurface(m)) k *= 1.3;
+    if (m.pup) k *= 0.9;
+    if (m.role === 'Forager' && this.onSurface(m)) k *= 1 + 0.05 * (this.stars(m, 'Forager') - 1);
     const st = m.status;
     if (this.isSweaty(m)) k *= CFG.SWEATY_MULT;
     if (st.dusty) k *= CFG.DUSTY_MULT;
@@ -225,25 +265,88 @@ export class World {
     if (st.groomed > 0) k *= CFG.GROOMED_MULT;
     if (this.onSurface(m)) {
       if (this.weather === 'downpour') k *= 0.85;
-      if (this.weather === 'haboob' && m.gear.eyes !== 'goggles') k *= 0.8;
+      if (this.weather === 'haboob' && m.gear.eyes !== 'goggles' && m.trait !== 'tunnelrat') k *= 0.8;
     }
     return k;
   }
   digMult(m: Meerkat): number {
-    return this.season.def.dig * (m.gear.head === 'helmet' ? 1.25 : 1) * (this.hasSynergy('glow') ? 1.2 : 1);
+    const st = this.stars(m, 'Digger');
+    const mastery = (1 + 0.1 * (st - 1)) * (st >= 4 && this.season.def.id === 'dry' ? 1.5 : 1);
+    return this.season.def.dig * (m.gear.head === 'helmet' ? 1.25 : 1) * (this.hasSynergy('glow') ? 1.2 : 1) * this.workMult(m) * mastery;
+  }
+  /** Quirk bonuses to any work: Sunbather's afternoon glow, a Chatterbox coworker nearby. */
+  workMult(m: Meerkat): number {
+    let k = 1;
+    if (m.quirk === 'sunbather' && m.quirkDay === this.clock.day && this.clock.phase === 'Afternoon') k *= 1.15;
+    if (this.chatterNear(m)) k *= 1.1;
+    return k;
+  }
+  /** A Chatterbox (not this meerkat) is working within 4 tiles. */
+  chatterNear(m: Meerkat): boolean {
+    return this.meerkats.some(
+      (o) => o !== m && o.quirk === 'chatterbox' && WORKING.includes(o.state) && Math.abs(o.x - m.x) + Math.abs(o.y - m.y) <= 4,
+    );
+  }
+  meerkatById(id: number | null): Meerkat | undefined {
+    return id == null ? undefined : this.meerkats.find((m) => m.id === id);
+  }
+  get adults(): Meerkat[] {
+    return this.meerkats.filter((m) => !m.pup);
+  }
+  get pups(): Meerkat[] {
+    return this.meerkats.filter((m) => m.pup);
   }
   packSlots(m: Meerkat): number {
-    return m.gear.back === 'gourdpack' ? 6 : CFG.BACKPACK_SLOTS;
+    const base = m.gear.back === 'pouch' ? 8 : m.gear.back === 'gourdpack' ? 6 : CFG.BACKPACK_SLOTS;
+    return base + (this.stars(m, 'Forager') >= 3 && m.role === 'Forager' ? 1 : 0);
+  }
+
+  // ---------------------------------------------------------------- role mastery (spec 7.1)
+
+  /** 1–5 Role Mastery stars in a role. */
+  stars(m: Meerkat, role: Role = m.role): number {
+    return masteryStars(m.mastery[role], CFG.MASTERY);
+  }
+
+  /** Credit work time towards a role; announces new stars. */
+  addMastery(m: Meerkat, role: Role, dt: number): void {
+    if (m.pup) return;
+    const before = this.stars(m, role);
+    m.mastery[role] += dt;
+    const after = this.stars(m, role);
+    if (after > before) {
+      m.notice = '⭐';
+      m.noticeTimer = 2;
+      this.sfx('success');
+      this.toast(`⭐ ${m.name} reached ${'★'.repeat(after)} ${role} Mastery!`, 'good');
+    }
+  }
+
+  /** A posted 5★ Sentry makes eagles hover 1.5s longer before swooping. */
+  eagleShadowTime(): number {
+    const master = this.meerkats.some((m) => m.role === 'Sentry' && m.state === 'Posted' && this.stars(m, 'Sentry') >= 5);
+    return CFG.EAGLE.shadow + (master ? 1.5 : 0);
   }
   radarRadius(m: Meerkat, onPerch: boolean): number {
     let r = CFG.SENTRY_RADIUS * (onPerch ? CFG.PERCH_RADIUS_MULT : 1);
     if (this.weather === 'haboob' && m.gear.eyes !== 'goggles') r *= CFG.HABOOB_RADAR_MULT;
     if (this.radarBoostDay === this.clock.day) r *= 1.25;
+    if (m.trait === 'eagleeyed') r *= 1.25;
+    r *= 1 + 0.06 * (this.stars(m, 'Sentry') - 1);
     return r;
   }
 
   get surfaceDanger(): boolean {
-    return this.dangerTimer > 0 || this.eagles.some((e) => e.alerted || e.selfNoticed);
+    return (
+      this.dangerTimer > 0 ||
+      this.eagles.some((e) => e.alerted || e.selfNoticed) ||
+      this.jackals.some((j) => j.alerted && (j.state === 'patrol' || j.state === 'chase')) ||
+      this.badgers.some((b) => (b.alerted || b.noticed) && b.state === 'walking')
+    );
+  }
+  /** Foragers steer clear of treasure guarded by a scorpion they know about. */
+  guardedNode(nodeId: number): boolean {
+    return this.scorpions.some((s) => s.nodeId === nodeId && s.state === 'revealed');
   }
   cellOf(m: Meerkat): number {
     return this.grid.idx(clamp(Math.floor(m.x), 0, CFG.W - 1), clamp(Math.floor(m.y), 0, CFG.H - 1));
@@ -419,9 +522,233 @@ export class World {
     this.updateConservatory(dt);
     for (const e of [...this.eagles]) updateEagle(this, e, dt);
     for (const c of [...this.cobras]) updateCobra(this, c, dt);
+    for (const j of [...this.jackals]) updateJackal(this, j, dt);
+    for (const s of [...this.scorpions]) updateScorpion(this, s, dt);
+    for (const b of [...this.badgers]) updateBadger(this, b, dt);
     this.updateSentries(dt);
+    this.updateLeader(dt);
     for (const m of this.meerkats) updateMeerkat(this, m, dt);
+    this.updatePups(dt);
     this.updateNodes(dt);
+  }
+
+  get seasonNumber(): number {
+    return Math.floor((this.clock.day - 1) / CFG.SEASON_DAYS) + 1;
+  }
+
+  // ---------------------------------------------------------------- pups & mentorship
+
+  private birthPups(): void {
+    const rooms = this.builtRooms('playroom');
+    if (!rooms.length || this.morale < CFG.PUP.morale || this.adults.length < 2) return;
+    if (this.pups.length >= rooms.length * CFG.PUP.perPlayroom || !this.rng.chance(CFG.PUP.birthChance)) return;
+    const r = rooms[this.pups.length % rooms.length];
+    const p = this.addPup(r.x + 1 + this.rng.int(0, r.w - 3), r.y + r.h - 1);
+    this.toast(`🍼 A pup, ${p.name}, was born in the Playroom! Drag an adult onto them to be their mentor.`, 'good');
+    this.sfx('join');
+  }
+
+  addPup(cx: number, cy: number): Meerkat {
+    const m = this.addMeerkat('Forager', cx, cy);
+    m.pup = true;
+    m.growth = 0;
+    m.mentored = 0;
+    return m;
+  }
+
+  /** Make an adult the pup's mentor (spec: drop a meerkat onto a pup). */
+  setMentor(pup: Meerkat, mentor: Meerkat | null): boolean {
+    if (!pup.pup || (mentor && mentor.pup)) return false;
+    pup.mentorId = mentor?.id ?? null;
+    if (mentor) {
+      this.toast(`🧡 ${pup.name} will shadow ${mentor.name} (${TRAITS[mentor.trait].icon} ${TRAITS[mentor.trait].name}) and may inherit that trait.`, 'good');
+      this.sfx('join');
+    }
+    return true;
+  }
+
+  private updatePups(dt: number): void {
+    const P = CFG.PUP;
+    const youth = this.hasSynergy('youth');
+    let joy = 0;
+    for (const m of this.meerkats) {
+      if (!m.pup || m.state === 'Sleeping' || m.state === 'Held') continue;
+      joy++;
+      const mentor = this.meerkatById(m.mentorId);
+      const near = !!mentor && Math.abs(mentor.x - m.x) + Math.abs(mentor.y - m.y) <= P.followRange + 1;
+      const g = (dt / (P.days * CFG.DAY_LENGTH * 0.8)) * (1 + (near ? P.mentorBonus * (youth ? 2 : 1) : 0));
+      m.growth += g;
+      if (near) m.mentored += g;
+      if (m.growth >= 1) this.growUp(m, mentor);
+    }
+    // Colony Joy: pups mimicking the adults cheer everyone up.
+    if (joy) this.addMorale(dt * 0.02 * joy);
+    // A Chatterbox squeaking away beside a coworker cheers up the whole room.
+    const chatty = this.meerkats.some(
+      (m) => m.quirk === 'chatterbox' && WORKING.includes(m.state) && this.meerkats.some((o) => o !== m && this.chatterNear(o)),
+    );
+    if (chatty) this.addMorale(dt * 0.01);
+  }
+
+  private growUp(m: Meerkat, mentor: Meerkat | undefined): void {
+    m.pup = false;
+    m.growth = 1;
+    const f = this.adults.filter((k) => k.role === 'Forager').length;
+    const d = this.adults.filter((k) => k.role === 'Digger').length;
+    m.role = f <= d ? 'Forager' : 'Digger';
+    let extra = '';
+    if (mentor && m.mentored >= CFG.PUP.inherit) {
+      m.trait = mentor.trait;
+      extra = ` Thanks to ${mentor.name}'s mentoring, they inherited ${TRAITS[m.trait].icon} ${TRAITS[m.trait].name}!`;
+    }
+    m.mentorId = null;
+    this.stats.pups++;
+    this.interrupt(m);
+    this.addMorale(3);
+    this.sfx('success');
+    this.toast(`🎓 ${m.name} grew up and became a ${m.role}!${extra}`, 'good');
+  }
+
+  // ---------------------------------------------------------------- gamepad: Alpha scout & squad
+
+  get alpha(): Meerkat | undefined {
+    return this.meerkatById(this.alphaId);
+  }
+
+  /** Current Alpha, or the best adult to become one (a Forager, if there is one). */
+  pickAlpha(): Meerkat | undefined {
+    const cur = this.alpha;
+    if (cur && !cur.pup) return cur;
+    const pool = this.adults.filter((m) => m.state !== 'Held');
+    const m = pool.find((k) => k.role === 'Forager') ?? pool[0];
+    this.alphaId = m?.id ?? null;
+    return m;
+  }
+
+  /** Cycle the Alpha to the next adult. */
+  nextAlpha(): Meerkat | undefined {
+    const pool = this.adults;
+    if (!pool.length) return undefined;
+    const i = pool.findIndex((m) => m.id === this.alphaId);
+    const m = pool[(i + 1) % pool.length];
+    const old = this.alpha;
+    if (old && old.state === 'Led') this.interrupt(old);
+    this.alphaId = m.id;
+    this.squad.delete(m.id);
+    this.toast(`🎮 ${m.name} is now the Alpha scout.`);
+    return m;
+  }
+
+  setLeadStick(x: number, y: number): void {
+    this.leadStick = { x, y };
+  }
+
+  private updateLeader(dt: number): void {
+    const { x, y } = this.leadStick;
+    const active = Math.abs(x) > 0.25 || Math.abs(y) > 0.5;
+    const m = active ? this.pickAlpha() : this.alpha;
+    if (!m || m.state === 'Held' || m.state === 'Dizzy' || m.state === 'Ouch' || this.clock.phase === 'Night') return;
+    if (!active) {
+      if (m.state === 'Led' && (this.leadIdle += dt) > 8) this.interrupt(m);
+      return;
+    }
+    this.leadIdle = 0;
+    if (!this.onSurface(m)) {
+      // Underground: any push sends the Alpha up the nearest way out.
+      if (m.state !== 'Walking' || m.intent !== 'follow') {
+        const r = bfs(this.grid, this.cellOf(m));
+        let best = -1;
+        let bd = Infinity;
+        for (let c = 1; c < CFG.W - 1; c++) {
+          const i = this.grid.idx(c, SY - 1);
+          if (r.dist[i] >= 0 && r.dist[i] < bd) ((bd = r.dist[i]), (best = i));
+        }
+        this.interrupt(m);
+        if (best >= 0) this.goToVia(m, r, best, 'follow');
+      }
+      return;
+    }
+    if (y > 0.5 && this.grid.walkable(Math.floor(m.x), SY)) {
+      // Pull down over a hole: dive in.
+      this.interrupt(m);
+      this.goTo(m, this.grid.idx(Math.floor(m.x), SY), 'hide', 'Fleeing');
+      return;
+    }
+    if (m.state !== 'Led') {
+      this.interrupt(m);
+      m.state = 'Led';
+    }
+    if (Math.abs(x) > 0.25) {
+      m.facing = x > 0 ? 1 : -1;
+      m.x = clamp(m.x + x * CFG.SPEED_SURFACE * 1.15 * this.speedMult(m) * dt, 1.5, CFG.W - 1.5);
+      m.y = SY - 0.5;
+      m.stamina = Math.max(0, m.stamina - CFG.STAMINA_DRAIN * 0.5 * dt);
+    }
+  }
+
+  /** Face button: the Alpha forages whatever is underfoot. */
+  leaderGather(): boolean {
+    const m = this.alpha;
+    if (!m || !this.onSurface(m) || m.pup) return false;
+    const n = this.nodes.find((k) => !k.hidden && k.stock > 0 && Math.abs(k.x + 0.5 - m.x) <= 1.2);
+    if (!n || m.pack.items >= this.packSlots(m)) return false;
+    this.interrupt(m);
+    m.x = n.x + 0.5;
+    m.nodeId = n.id;
+    m.state = 'Gathering';
+    m.timer = n.gatherTime;
+    return true;
+  }
+
+  /** Squad Whistle: nearby surface meerkats fall into a follow-line behind the Alpha (press again to dismiss). */
+  squadWhistle(): number {
+    const a = this.pickAlpha();
+    if (!a) return 0;
+    if (this.squad.size) {
+      for (const id of this.squad) {
+        const m = this.meerkatById(id);
+        if (m && m.state === 'Following') this.interrupt(m);
+      }
+      this.squad.clear();
+      this.toast('🎶 Squad dismissed: back to your jobs!');
+      return 0;
+    }
+    const near = this.adults.filter(
+      (m) => m !== a && m.role !== 'Sentry' && !['Held', 'Sleeping', 'Dizzy', 'Ouch'].includes(m.state) && Math.abs(m.x - a.x) + Math.abs(m.y - a.y) <= 24,
+    );
+    for (const m of near.slice(0, 4)) {
+      this.squad.add(m.id);
+      this.interrupt(m);
+    }
+    this.sfx('whistle');
+    this.toast(near.length ? `🎶 Squad Whistle! ${near.slice(0, 4).map((m) => m.name).join(', ')} fall in behind ${a.name}.` : '🎶 Nobody close enough to hear the whistle.');
+    return Math.min(4, near.length);
+  }
+
+  /** Surface x a squad member should trot to: a line behind the Alpha. */
+  squadSlotX(m: Meerkat): number | null {
+    const a = this.alpha;
+    if (!a || !this.onSurface(a)) return null;
+    const k = [...this.squad].indexOf(m.id);
+    if (k < 0) return null;
+    return clamp(a.x - a.facing * (k + 1) * 1.3, 1.5, CFG.W - 1.5);
+  }
+
+  /** Shoulder button: rally against whatever threat is nearest the Alpha. */
+  leaderRally(): boolean {
+    const a = this.pickAlpha();
+    if (!a) return false;
+    const near = (x: number) => Math.abs(x - a.x) <= 20;
+    const c = this.cobras.find((k) => k.revealed && near(k.x));
+    if (c) return this.rallyAt(c);
+    const s = this.scorpions.find((k) => k.state === 'revealed' && near(k.x));
+    if (s) return this.flipScorpion(s);
+    const j = this.jackals.find((k) => k.state !== 'leaving' && k.state !== 'decoy' && near(k.x));
+    if (j) return this.tossDecoy(j);
+    const b = this.badgers.find((k) => k.state === 'walking' && near(k.x));
+    if (b) return this.dropHoneycomb(b);
+    this.toast('Nothing to rally against nearby.');
+    return false;
   }
 
   private onNewDay(): void {
@@ -430,9 +757,17 @@ export class World {
     else if (s.dayInSeason === CFG.SEASON_DAYS) this.toast('🏆 The Burrow Pageant is at dusk today! Check 🏆 for what the Elders will judge.', 'good');
     else this.toast(`${s.def.icon} Day ${this.clock.day}: ${s.def.name}, day ${s.dayInSeason} of ${CFG.SEASON_DAYS}`);
     this.scheduleWeather();
-    if (this.morale >= CFG.RECRUIT_MORALE && this.meerkats.length < this.maxMeerkats) {
-      const f = this.meerkats.filter((m) => m.role === 'Forager').length;
-      const d = this.meerkats.filter((m) => m.role === 'Digger').length;
+    this.birthPups();
+    for (const p of this.neighbors) {
+      if (!p.partner) continue;
+      const res = this.rng.pick<Res>(['food', 'grass', 'gems']);
+      const amt = res === 'food' ? 4 : res === 'grass' ? 2 : 1;
+      this.add(res, amt);
+      this.toast(`🎁 Your trading partners, the ${p.name}, sent a gift: +${amt} ${RES_ICON[res]}`, 'good');
+    }
+    if (this.morale >= CFG.RECRUIT_MORALE && this.adults.length < this.maxMeerkats) {
+      const f = this.adults.filter((m) => m.role === 'Forager').length;
+      const d = this.adults.filter((m) => m.role === 'Digger').length;
       const fromLeft = this.rng.chance(0.5);
       const m = this.addMeerkat(f <= d ? 'Forager' : 'Digger', fromLeft ? 1 : CFG.W - 2, SY - 1);
       this.toast(`🐾 A wandering meerkat, ${m.name}, liked your cozy burrow and joined the mob!`, 'good');
@@ -479,7 +814,9 @@ export class World {
         if (DUSK_RECALL.includes(m.state) || (m.state === 'Digging' && job?.bolt)) this.interrupt(m);
       }
     } else if (p === 'Night') {
-      const need = this.meerkats.length;
+      // Iron Stomachs munch bitter drought roots instead of pantry food in the Long Dry.
+      const roots = this.season.def.id === 'dry' ? this.meerkats.filter((m) => m.trait === 'ironstomach').length : 0;
+      const need = this.meerkats.length - roots;
       const eaten = Math.min(this.food, need);
       this.food -= eaten;
       const hungry = need - eaten;
@@ -499,6 +836,9 @@ export class World {
       if (unkempt) this.addMorale(-unkempt);
       this.assignBeds();
       for (const c of this.cobras) if (c.state !== 'leaving') cobraLeave(this, c);
+      for (const j of this.jackals) if (j.state !== 'leaving') jackalLeave(this, j);
+      for (const b of this.badgers) if (b.state !== 'leaving') ((b.state = 'leaving'), (b.dir = b.x > CFG.W / 2 ? 1 : -1));
+      this.squad.clear();
       for (const m of this.meerkats) if (m.state !== 'Held' && m.state !== 'Sleeping' && m.state !== 'Dizzy') this.interrupt(m);
     }
   }
@@ -517,6 +857,20 @@ export class World {
       this.eagleTimer -= dt;
       if (this.eagleTimer <= 0) {
         this.eagleTimer = spawnEagle(this) ? this.rng.range(CFG.EAGLE.minGap, CFG.EAGLE.maxGap) : 5;
+      }
+    }
+    if (p === 'Afternoon' && this.clock.day >= CFG.JACKAL.firstDay && this.jackals.length === 0) {
+      this.jackalTimer -= dt;
+      if (this.jackalTimer <= 0) {
+        spawnJackal(this);
+        this.jackalTimer = this.rng.range(CFG.JACKAL.minGap, CFG.JACKAL.maxGap);
+      }
+    }
+    if (p === 'Afternoon' && this.seasonNumber >= CFG.BADGER.fromSeason && this.badgers.length === 0) {
+      this.badgerTimer -= dt;
+      if (this.badgerTimer <= 0) {
+        spawnBadger(this);
+        this.badgerTimer = this.rng.range(CFG.BADGER.minGap, CFG.BADGER.maxGap);
       }
     }
     if (p === 'Afternoon' && this.clock.day >= CFG.COBRA.firstDay && this.cobras.length === 0) {
@@ -538,6 +892,29 @@ export class World {
       const post = this.sentryPost(m);
       const radius = this.radarRadius(m, post.onPerch);
       m.radar = radius;
+      this.addMastery(m, 'Sentry', dt);
+      if (this.stars(m, 'Sentry') >= 4) {
+        // A master Sentry spots buried loot from the lookout.
+        const found = this.nodes.filter((n) => n.hidden && Math.abs(n.x + 0.5 - m.x) <= radius);
+        for (const n of found) n.hidden = false;
+        if (found.length) this.toast(`🔭 ${m.name}'s keen eye spotted ${found.length} buried snack spot${found.length > 1 ? 's' : ''}!`, 'good');
+      }
+      const jackal = this.jackals.find((j) => !j.alerted && (j.state === 'patrol' || j.state === 'chase') && Math.abs(j.x - m.x) <= radius);
+      if (jackal) {
+        jackal.alerted = true;
+        m.notice = '!';
+        m.noticeTimer = 1.5;
+        this.bus.publish({ type: 'jackal', x: m.x, y: m.y, radius: 999, relay: true, sourceId: m.id, predatorId: jackal.id });
+        this.sfx('bark');
+        this.toast(`🐺 Woof-woof! ${m.name} spotted a jackal on patrol! Foragers, get underground. (Tap the jackal to toss a decoy gourd.)`, 'warn');
+      }
+      const badger = this.badgers.find((b) => !b.alerted && b.state === 'walking' && Math.abs(b.x - m.x) <= radius);
+      if (badger) {
+        badger.alerted = true;
+        this.bus.publish({ type: 'badger', x: m.x, y: m.y, radius: 999, relay: true, sourceId: m.id, predatorId: badger.id });
+        this.sfx('hum');
+        this.toast(`🦡 Hmmmmmmm… ${m.name} sounds the Siren Hum: a honey badger! Clear the ground. (Tap it to knock down a wild honeycomb.)`, 'warn');
+      }
       const seen = this.eagles.find(
         (e) => !e.alerted && (e.state === 'circling' || e.state === 'shadow') && Math.abs(eagleGroundX(e) - m.x) <= radius,
       );
@@ -709,7 +1086,7 @@ export class World {
     return room;
   }
 
-  completeJob(job: Job): void {
+  completeJob(job: Job, by?: Meerkat): void {
     const g = this.grid;
     this.jobs.remove(job.id);
     if (job.kind === 'dig') {
@@ -718,7 +1095,8 @@ export class World {
       this.stats.dug++;
       if (job.bolt) this.stats.boltHoles++;
       const clay = job.total >= CFG.DIG_CLAY * 0.99;
-      if (this.rng.chance(clay ? CFG.GEM_CHANCE_CLAY : CFG.GEM_CHANCE_SAND)) {
+      const luck = by ? 1 + 0.25 * (this.stars(by, 'Digger') - 1) : 1;
+      if (this.rng.chance((clay ? CFG.GEM_CHANCE_CLAY : CFG.GEM_CHANCE_SAND) * luck)) {
         this.materials.gems++;
         this.sfx('gem');
         this.toast('💎 A Digger unearthed a gem!', 'good');
@@ -756,6 +1134,7 @@ export class World {
   }
 
   setRole(m: Meerkat, role: Role): void {
+    if (m.pup) return;
     if (m.role !== role) {
       m.role = role;
       this.toast(`${m.name} is now a ${role}.`);
@@ -773,13 +1152,23 @@ export class World {
     m.y = ty + 0.4;
   }
 
-  /** Drop a held meerkat; where it lands decides its role. */
+  /** Drop a held meerkat; where it lands decides its role (or, dropped on a pup, its mentee). */
   drop(m: Meerkat, tx: number, ty: number): Role {
     const g = this.grid;
     const cx = clamp(Math.floor(tx), 1, CFG.W - 2);
     const cy = clamp(Math.floor(ty), 0, CFG.H - 1);
     let role: Role;
     let cell: number;
+    const pup = m.pup ? undefined : this.meerkats.find((k) => k.pup && k !== m && Math.abs(k.x - tx) < 1.2 && Math.abs(k.y - ty) < 1.5);
+    if (pup || m.pup) {
+      // Pups can't take jobs; an adult dropped on a pup becomes its mentor and keeps its job.
+      if (pup) this.setMentor(pup, m);
+      const c = cy < SY ? g.idx(cx, SY - 1) : (this.nearestUnderground(cx, cy) ?? this.homeCell);
+      m.x = g.xOf(c) + 0.5;
+      m.y = g.yOf(c) + 0.5;
+      this.interrupt(m);
+      return m.role;
+    }
     const perch = this.rooms.find((r) => r.type === 'perch' && cx >= r.x - 1 && cx <= r.x + r.w && cy >= SY - 5 && cy <= SY);
     if (perch) {
       role = 'Sentry';
@@ -836,12 +1225,78 @@ export class World {
     return true;
   }
 
+  /** Toss a decoy stink-beetle gourd: the jackal chases it instead (and stops blocking a hole). */
+  tossDecoy(j: Jackal): boolean {
+    if (j.state === 'leaving' || j.state === 'decoy') return false;
+    if (this.food < CFG.JACKAL.decoyCost) {
+      this.toast('No snacks to stuff a decoy gourd with!', 'warn');
+      this.sfx('error');
+      return false;
+    }
+    this.food -= CFG.JACKAL.decoyCost;
+    this.stats.decoys++;
+    if (j.hole >= 0) this.grid.blocked[this.grid.idx(j.hole, SY)] = 0;
+    j.hole = -1;
+    j.state = 'decoy';
+    j.t = 0;
+    j.targetId = null;
+    j.decoyX = j.x > CFG.W / 2 ? CFG.W - 2 : Math.max(2, j.x - 20);
+    if (Math.abs(j.decoyX - CFG.ENTRANCE_X) < 8) j.decoyX = CFG.W - 2;
+    this.sfx('pop');
+    this.toast(`🎃 A stinky decoy gourd goes flying (−${CFG.JACKAL.decoyCost} 🍓)… the jackal bounds after it!`, 'good');
+    return true;
+  }
+
+  /** Tail-Dodge & Flip: send the two nearest helpers to trap a revealed scorpion under a coconut shell. */
+  flipScorpion(s: Scorpion): boolean {
+    if (s.state !== 'revealed' || this.clock.phase === 'Night') return false;
+    const helpers = this.adults
+      .filter((m) => m.state !== 'Held' && m.state !== 'Sleeping' && m.state !== 'Posted' && m.state !== 'Ouch' && m.state !== 'Dizzy')
+      .map((m) => ({ m, d: Math.abs(m.x - s.x) + (this.onSurface(m) ? 0 : 12) }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, CFG.SCORPION.flipNeeded);
+    // A 5★ Forager can Tail-Dodge & Flip on their own.
+    const solo = helpers.find((h) => h.m.role === 'Forager' && this.stars(h.m, 'Forager') >= 5);
+    if (solo) helpers.splice(0, helpers.length, solo);
+    else if (helpers.length < CFG.SCORPION.flipNeeded) {
+      this.toast(`🦂 You need ${CFG.SCORPION.flipNeeded} meerkats to Tail-Dodge & Flip.`, 'warn');
+      return false;
+    }
+    helpers.forEach(({ m }, i) => {
+      this.interrupt(m);
+      m.targetId = s.id;
+      const x = clamp(Math.floor(s.x) + (i === 0 ? -1 : 1), 1, CFG.W - 2);
+      if (!this.goTo(m, this.grid.idx(x, SY - 1), 'flip', 'Rallying')) this.interrupt(m);
+    });
+    this.sfx('chirp');
+    this.toast(`🦂 ${helpers.map((h) => h.m.name).join(' & ')} sneak up on the scorpion with a stick and a coconut shell…`);
+    return true;
+  }
+
+  /** Knock down a wild honeycomb: the badger stops to feast, then waddles home. Once a day. */
+  dropHoneycomb(b: Badger): boolean {
+    if (b.state !== 'walking') return false;
+    if (this.honeyDay === this.clock.day) {
+      this.toast('🍯 No more wild honeycombs within reach today.', 'warn');
+      this.sfx('error');
+      return false;
+    }
+    this.honeyDay = this.clock.day;
+    this.stats.honey++;
+    b.state = 'eating';
+    b.t = CFG.BADGER.honeyTime;
+    this.sfx('munch');
+    this.toast('🍯 A Sentry knocks a wild honeycomb off the acacia! The honey badger forgets all about the bolt-holes.', 'good');
+    return true;
+  }
+
   // ---------------------------------------------------------------- seasons & weather
 
   private startSeason(def: SeasonDef): void {
     this.stats.seasons++;
     this.toast(`${def.icon} ${def.name} begins! ${def.intro}`, 'good');
     const remove = (types: NodeType[]) => (this.nodes = this.nodes.filter((n) => !types.includes(n.type)));
+    this.scorpions = [];
     switch (def.id) {
       case 'rains':
         remove(['grub', 'gem']);
@@ -860,6 +1315,14 @@ export class World {
         for (const n of this.nodes) if (n.type === 'berry') n.stock = 0;
         this.spawnNodes('grub', 5, 6, true);
         break;
+    }
+    // Thick-Tailed Scorpions guard buried treasure under flat rocks in the lean seasons.
+    if (def.id !== 'rains') {
+      const loot = this.nodes.filter((n) => (n.type === 'grub' || n.type === 'gem') && Math.abs(n.x - CFG.ENTRANCE_X) > 8);
+      for (let k = 0; k < Math.min(2, loot.length); k++) {
+        const n = loot.splice(this.rng.int(0, loot.length - 1), 1)[0];
+        spawnScorpion(this, n.id, n.x);
+      }
     }
   }
 
@@ -931,6 +1394,17 @@ export class World {
         found++;
       }
     }
+    let clicks = 0;
+    for (const s of this.scorpions) {
+      if (s.state === 'hidden' && xs.some((x) => Math.abs(x - (s.x + 0.5)) <= CFG.SNIFF_RADIUS)) {
+        s.state = 'revealed';
+        clicks++;
+      }
+    }
+    if (clicks) {
+      this.sfx('click');
+      this.toast(`🦂 Click-click! A claw-snap rattle from under a flat rock: ${clicks > 1 ? `${clicks} scorpions are` : 'a scorpion is'} guarding treasure. Foragers will steer clear.`, 'warn');
+    }
     this.sniffCooldown = CFG.SNIFF_COOLDOWN;
     this.sniffFx = { xs, t: CFG.SNIFF_FX };
     this.stats.sniffs++;
@@ -996,7 +1470,15 @@ export class World {
     if (!room.built) return { ok: false, reason: 'Not built yet' };
     if (room.playedDay === this.clock.day) return { ok: false, reason: 'Already played today. Come back tomorrow!' };
     if (this.clock.phase === 'Night') return { ok: false, reason: 'Everyone is asleep' };
+    if (kind === 'feast' && this.food < FEAST_COST) return { ok: false, reason: `A feast needs ${FEAST_COST} 🍓` };
     return { ok: true };
+  }
+
+  /** Spend the feast food and seat the guests; the mini-game decides how it goes. */
+  startFeast(room: Room, packId: number): boolean {
+    if (room.type !== 'banquet' || !this.canPlay(room).ok || !this.neighbors.some((p) => p.id === packId)) return false;
+    this.food -= FEAST_COST;
+    return true;
   }
 
   /** The meerkat most in need of a brush. */
@@ -1026,6 +1508,54 @@ export class World {
       if (t.shadow > 0) {
         this.radarBoostDay = this.clock.day;
         lines.push('Sentries are on high alert: +25% radar today');
+      }
+    } else if (r.kind === 'tumble') {
+      const pups = this.pups;
+      const xp = Math.min(0.3, 0.04 * r.score) * mult;
+      for (const p of pups) p.growth = Math.min(0.99, p.growth + xp);
+      this.addMorale(Math.min(6, r.score) * mult);
+      lines.push(pups.length ? `${pups.length} pup${pups.length > 1 ? 's' : ''} grew ${Math.round(xp * 100)}% from all that tumbling` : 'The grown-ups had a giggle', `+${Math.min(6, r.score) * mult} 😊 morale`);
+    } else if (r.kind === 'weave') {
+      const grass = r.score * mult;
+      this.materials.grass += grass;
+      lines.push(`+${grass} 🌾 of neatly knotted fibre`);
+      if (r.perfect) {
+        this.materials.gems += 1;
+        lines.push('+1 💎 for a flawless loom');
+      }
+    } else if (r.kind === 'puppets') {
+      const p = Math.floor(r.score / 3) * mult;
+      if (p) this.addPrestige(p);
+      this.addMorale(2);
+      lines.push(p ? `+${p} ⭐ Prestige: the audience roared` : 'A polite round of applause', '+2 😊 morale');
+    } else if (r.kind === 'prism') {
+      const food = r.score * 2 * mult;
+      if (food) this.deposit(food);
+      if (r.score) this.seasonal.pantryKinds.add('truffle');
+      lines.push(`+${food} 🍓 of glowing truffles and mushrooms`);
+    } else if (r.kind === 'polo') {
+      for (const m of this.meerkats) m.status.refreshed = true;
+      const joy = Math.min(8, r.score) * mult;
+      this.addMorale(joy);
+      lines.push(`+${joy} 😊 morale from all that splashing`, 'Everyone is Oasis Refreshed');
+      if (r.score >= 3) {
+        const p = r.perfect ? 2 : 1;
+        this.addPrestige(p);
+        lines.push(`+${p} ⭐ Prestige: the neighbours heard the cheering`);
+      }
+    } else if (r.kind === 'feast') {
+      const pack = this.neighbors.find((p) => p.id === r.packId);
+      if (pack) {
+        const gain = Math.round((r.score / Math.max(1, r.max)) * 30) * mult;
+        pack.relation = Math.min(100, pack.relation + gain);
+        lines.push(`The ${pack.name} had a lovely time: +${gain} friendship`);
+        if (!pack.partner && pack.relation >= 80) {
+          pack.partner = true;
+          lines.push('🤝 They are now permanent trading partners and will send gifts every morning!');
+        }
+        this.addMorale(3);
+        this.stats.feasts++;
+        this.seasonal.pantryKinds.add('feast');
       }
     } else if (r.kind === 'sort') {
       const food = Math.floor(r.score / 2) * mult;
@@ -1057,7 +1587,7 @@ export class World {
     const before = this.prestige;
     this.prestige += n;
     if (why) this.toast(why, 'good');
-    for (const t of ['lagoon', 'conservatory'] as RoomType[]) {
+    for (const t of WONDERS) {
       const need = ROOM_DEFS[t].unlock;
       if (before < need && this.prestige >= need && !this.unlocks.blueprints.has(t))
         this.toast(`📜 Blueprint unlocked: ${ROOM_DEFS[t].icon} ${ROOM_DEFS[t].name}! Find it under 🏠 Build.`, 'good');
@@ -1077,7 +1607,8 @@ export class World {
   private updateConservatory(dt: number): void {
     const n = this.builtRooms('conservatory').length;
     if (!n || this.clock.phase === 'Night') return;
-    this.growTimer -= dt * n;
+    const greenPaws = this.adults.filter((m) => m.trait === 'greenpaw').length;
+    this.growTimer -= dt * n * (1 + 0.2 * Math.min(greenPaws, 2));
     if (this.growTimer <= 0) {
       this.growTimer = 20;
       this.deposit(1);
@@ -1148,15 +1679,16 @@ export class World {
     const give: Res = id === 'dry' ? 'food' : id === 'dust' ? this.rng.pick<Res>(['food', 'grass']) : this.rng.pick<Res>(['gems', 'grass']);
     const want: Res = this.rng.pick((['food', 'grass', 'gems'] as Res[]).filter((r) => r !== give));
     const wantAmt = want === 'food' ? this.rng.int(4, 8) : this.rng.int(2, 4);
-    const rate = 1.1 + pack.relation / 250 + (this.unlocks.betterTrades ? 0.25 : 0);
+    const diplomat = this.meerkats.some((m) => m.gear.eyes === 'monocle');
+    const rate = 1.1 + pack.relation / 250 + (this.unlocks.betterTrades ? 0.25 : 0) + (pack.partner ? 0.2 : 0) + (diplomat ? 0.15 : 0);
     const giveAmt = Math.max(1, Math.round(((wantAmt * RES_VALUE[want]) / RES_VALUE[give]) * rate));
     return { give: { res: give, amt: giveAmt }, want: { res: want, amt: wantAmt } };
   }
 
-  private have(res: Res): number {
+  have(res: Res): number {
     return res === 'food' ? this.food : this.materials[res];
   }
-  private add(res: Res, n: number): void {
+  add(res: Res, n: number): void {
     if (res === 'food') this.food = Math.min(this.foodCap + n, this.food + n);
     else this.materials[res] += n;
   }
@@ -1212,13 +1744,14 @@ export class World {
       }
     }
     if (rank >= 3) {
-      const locked = (['lagoon', 'conservatory'] as RoomType[]).find((t) => !this.blueprintUnlocked(t));
+      const locked = WONDERS.find((t) => !this.blueprintUnlocked(t));
       if (locked) {
         this.unlocks.blueprints.add(locked);
         rewards.push(`📜 Wonder Blueprint: ${ROOM_DEFS[locked].icon} ${ROOM_DEFS[locked].name}`);
       }
       this.unlocks.extraSlots++;
       const m = this.addMeerkat(this.rng.pick<Role>(['Forager', 'Digger']), 1, SY - 1);
+      m.trait = this.traitRng.pick(TRAIT_KINDS);
       const gift = this.rng.pick(GEAR_KINDS);
       this.gearStock[gift]++;
       this.equip(m, GEAR[gift].slot, gift);
@@ -1241,6 +1774,122 @@ export class World {
     this.seasonal = { pantryKinds: new Set(), bestMiniGame: 0 };
     this.emit({ kind: 'pageant', result });
     return result;
+  }
+
+  // ---------------------------------------------------------------- save & load
+
+  /** A plain-JSON snapshot of everything needed to resume the colony. */
+  serialize(): SaveData {
+    const g = this.grid;
+    return {
+      version: SAVE_VERSION,
+      rng: this.rng.state,
+      traitRng: this.traitRng.state,
+      nextId: this.nextId,
+      clock: { t: this.clock.t, day: this.clock.day },
+      tiles: packBytes(g.tiles),
+      roomAt: Array.from(g.roomAt),
+      blocked: packBytes(g.blocked),
+      jobs: this.jobs.snapshot(),
+      rooms: this.rooms.map((r) => ({ ...r })),
+      nodes: this.nodes.map((n) => ({ ...n, regrow: Number.isFinite(n.regrow) ? n.regrow : -1, ttl: Number.isFinite(n.ttl) ? n.ttl : -1 })),
+      meerkats: this.meerkats.map((m) => ({ ...m, mastery: { ...m.mastery }, path: [...m.path], pack: { ...m.pack, kinds: [...m.pack.kinds] }, gear: { ...m.gear }, status: { ...m.status } })),
+      eagles: this.eagles.map((e) => ({ ...e })),
+      cobras: this.cobras.map((c) => ({ ...c })),
+      jackals: this.jackals.map((j) => ({ ...j })),
+      scorpions: this.scorpions.map((x) => ({ ...x })),
+      badgers: this.badgers.map((b) => ({ ...b })),
+      visitors: this.visitors.map((v) => ({ ...v, offer: { give: { ...v.offer.give }, want: { ...v.offer.want } } })),
+      neighbors: this.neighbors.map((n) => ({ ...n, last: n.last ? { ...n.last } : null })),
+      food: this.food,
+      morale: this.morale,
+      prestige: this.prestige,
+      trinkets: this.trinkets,
+      materials: { ...this.materials },
+      gearStock: { ...this.gearStock },
+      unlocks: { ...this.unlocks, blueprints: [...this.unlocks.blueprints] },
+      seasonal: { pantryKinds: [...this.seasonal.pantryKinds], bestMiniGame: this.seasonal.bestMiniGame },
+      stats: { ...this.stats },
+      timers: {
+        danger: this.dangerTimer,
+        eagle: this.eagleTimer,
+        cobra: this.cobraTimer,
+        jackal: this.jackalTimer,
+        badger: this.badgerTimer,
+        visitor: this.visitorTimer,
+        grow: this.growTimer,
+        sniff: this.sniffCooldown,
+        weatherAt: this.weatherAt,
+        weatherLeft: this.weatherLeft,
+        pantryWarn: this.pantryWarn,
+      },
+      weather: this.weather,
+      radarBoostDay: this.radarBoostDay,
+      honeyDay: this.honeyDay,
+      alphaId: this.alphaId,
+      squad: [...this.squad],
+      autoPredators: this.autoPredators,
+    };
+  }
+
+  /** Rebuild a world from serialize() output. */
+  static load(d: SaveData): World {
+    if (d.version !== SAVE_VERSION) throw new Error(`Unsupported save version ${d.version}`);
+    const w = new World({ seed: 1, startMeerkats: 0, roles: [], autoPredators: d.autoPredators });
+    w.rng.state = d.rng;
+    w.traitRng.state = d.traitRng;
+    w.nextId = d.nextId;
+    w.clock.t = d.clock.t;
+    w.clock.day = d.clock.day;
+    const g = w.grid;
+    unpackBytes(d.tiles, g.tiles);
+    unpackBytes(d.blocked, g.blocked);
+    g.roomAt.set(d.roomAt);
+    g.changed.length = 0;
+    w.jobs.restore(d.jobs);
+    w.rooms = d.rooms.map((r) => ({ ...r }));
+    w.nodes = d.nodes.map((n) => ({ ...n, regrow: n.regrow < 0 ? Infinity : n.regrow, ttl: n.ttl < 0 ? Infinity : n.ttl }));
+    w.meerkats = [];
+    for (const m of d.meerkats) {
+      const k: Meerkat = { ...makeMeerkat(m.id, m.name, m.palette, m.role, 0, 0), ...m };
+      w.meerkats.push(k);
+      w.bus.subscribe({ id: k.id, pos: () => ({ x: k.x, y: k.y }), onAlert: (a) => onAlert(w, k, a) });
+    }
+    w.eagles = d.eagles.map((e) => ({ ...e }));
+    w.cobras = d.cobras.map((c) => ({ ...c }));
+    w.jackals = d.jackals.map((j) => ({ ...j }));
+    w.scorpions = d.scorpions.map((x) => ({ ...x }));
+    w.badgers = d.badgers.map((b) => ({ ...b }));
+    w.visitors = d.visitors.map((v) => ({ ...v }));
+    w.neighbors = d.neighbors.map((n) => ({ ...n }));
+    w.food = d.food;
+    w.morale = d.morale;
+    w.prestige = d.prestige;
+    w.trinkets = d.trinkets;
+    w.materials = { ...d.materials };
+    w.gearStock = { ...w.gearStock, ...d.gearStock };
+    w.unlocks = { ...d.unlocks, blueprints: new Set(d.unlocks.blueprints) };
+    w.seasonal = { pantryKinds: new Set(d.seasonal.pantryKinds), bestMiniGame: d.seasonal.bestMiniGame };
+    w.stats = { ...d.stats };
+    const t = d.timers;
+    w.dangerTimer = t.danger;
+    w.eagleTimer = t.eagle;
+    w.cobraTimer = t.cobra;
+    w.jackalTimer = t.jackal;
+    w.badgerTimer = t.badger;
+    w.visitorTimer = t.visitor;
+    w.growTimer = t.grow;
+    w.sniffCooldown = t.sniff;
+    w.weatherAt = t.weatherAt;
+    w.weatherLeft = t.weatherLeft;
+    w.pantryWarn = t.pantryWarn;
+    w.weather = d.weather;
+    w.radarBoostDay = d.radarBoostDay;
+    w.honeyDay = d.honeyDay;
+    w.alphaId = d.alphaId;
+    w.squad = new Set(d.squad);
+    w.drainEvents();
+    return w;
   }
 
   // ---------------------------------------------------------------- debug
@@ -1268,12 +1917,84 @@ export class World {
   debugPageant(): void {
     this.runPageant();
   }
+  debugJackal(): void {
+    spawnJackal(this).x = Math.min(CFG.W + 2, CFG.ENTRANCE_X + 40);
+    this.toast('(debug) A jackal trots in from the dunes.');
+  }
+  debugBadger(): void {
+    spawnBadger(this);
+    this.toast('(debug) A honey badger is on its way.');
+  }
+  debugScorpion(): void {
+    const n = this.nodes.find((k) => !k.hidden && k.yield === 'food' && Math.abs(k.x - CFG.ENTRANCE_X) > 6 && !this.scorpions.some((s) => s.nodeId === k.id));
+    if (n) {
+      spawnScorpion(this, n.id, n.x).state = 'revealed';
+      this.toast('(debug) A scorpion is guarding a snack patch.');
+    }
+  }
+  debugPup(): void {
+    const r = this.builtRooms('playroom')[0];
+    const p = r ? this.addPup(r.x + 2, r.y + r.h - 1) : this.addPup(CFG.ENTRANCE_X, SY + 6);
+    this.toast(`(debug) ${p.name} the pup arrives.`);
+  }
   debugGiveMaterials(): void {
     this.prestige += 5;
     this.materials.grass += 10;
     this.materials.gems += 10;
     this.food = this.foodCap;
   }
+}
+
+/** Byte arrays (tiles) as base64 to keep saves small. */
+function packBytes(a: Uint8Array): string {
+  let bin = '';
+  for (let i = 0; i < a.length; i++) bin += String.fromCharCode(a[i]);
+  return btoa(bin);
+}
+function unpackBytes(s: string, out: Uint8Array): void {
+  const bin = atob(s);
+  for (let i = 0; i < out.length && i < bin.length; i++) out[i] = bin.charCodeAt(i);
+}
+
+export interface SaveData {
+  version: number;
+  rng: number;
+  traitRng: number;
+  nextId: number;
+  clock: { t: number; day: number };
+  tiles: string;
+  roomAt: number[];
+  blocked: string;
+  jobs: ReturnType<JobQueue['snapshot']>;
+  rooms: Room[];
+  nodes: ResourceNode[];
+  meerkats: Meerkat[];
+  eagles: Eagle[];
+  cobras: Cobra[];
+  jackals: Jackal[];
+  scorpions: Scorpion[];
+  badgers: Badger[];
+  visitors: Visitor[];
+  neighbors: NeighborPack[];
+  food: number;
+  morale: number;
+  prestige: number;
+  trinkets: number;
+  materials: World['materials'];
+  gearStock: World['gearStock'];
+  unlocks: Omit<World['unlocks'], 'blueprints'> & { blueprints: RoomType[] };
+  seasonal: { pantryKinds: string[]; bestMiniGame: number };
+  stats: World['stats'];
+  timers: {
+    danger: number; eagle: number; cobra: number; jackal: number; badger: number; visitor: number;
+    grow: number; sniff: number; weatherAt: number; weatherLeft: number; pantryWarn: number;
+  };
+  weather: Weather;
+  radarBoostDay: number;
+  honeyDay: number;
+  alphaId: number | null;
+  squad: number[];
+  autoPredators: boolean;
 }
 
 function ribbonOf(total: number): Ribbon {

@@ -16,15 +16,23 @@ export function updateMeerkat(w: World, m: Meerkat, dt: number): void {
   if (WORK_STATES.includes(m.state)) m.stamina = Math.max(0, m.stamina - CFG.STAMINA_DRAIN * dt * (w.isSweaty(m) ? 2 : 1));
   if (m.status.groomed > 0) m.status.groomed -= dt;
 
-  if (m.state === 'Dizzy') {
+  if (m.state === 'Dizzy' || m.state === 'Ouch') {
     m.timer -= dt;
     if (m.timer <= 0) w.interrupt(m);
     return;
   }
+  if (m.state === 'Led') return; // the player is steering
+  if (m.state === 'Fainting') {
+    m.timer -= dt;
+    if (m.timer <= 0) flee(w, m);
+    return;
+  }
+  if (m.state === 'Following') return follow(w, m, dt);
 
   if (m.path.length > 0) {
     moveAlong(w, m, dt);
-    if (m.path.length === 0) arrive(w, m);
+    clumsyTrip(w, m, dt);
+    if (m.path.length === 0 && (m.state as MState) !== 'Dizzy') arrive(w, m);
     return;
   }
 
@@ -37,8 +45,9 @@ export function updateMeerkat(w: World, m: Meerkat, dt: number): void {
       const job = m.jobId != null ? w.jobs.get(m.jobId) : undefined;
       if (!job) return w.interrupt(m);
       job.work -= dt * (m.stamina < 25 ? 0.7 : 1) * w.digMult(m);
+      w.addMastery(m, 'Digger', dt);
       if (job.work <= 0) {
-        w.completeJob(job);
+        w.completeJob(job, m);
         w.interrupt(m);
       }
       return;
@@ -46,7 +55,8 @@ export function updateMeerkat(w: World, m: Meerkat, dt: number): void {
     case 'Gathering': {
       const n = w.nodeById(m.nodeId);
       if (!n || n.stock <= 0) return w.interrupt(m);
-      m.timer -= dt;
+      m.timer -= dt * w.workMult(m);
+      w.addMastery(m, 'Forager', dt);
       if (m.timer <= 0) {
         n.stock--;
         m.pack.items++;
@@ -69,11 +79,18 @@ export function updateMeerkat(w: World, m: Meerkat, dt: number): void {
     }
     case 'Unloading':
       m.timer -= dt;
+      w.addMastery(m, 'Forager', dt);
       if (m.timer <= 0) {
         w.deposit(m.pack.value);
         w.materials.grass += m.pack.grass;
         w.materials.gems += m.pack.gems;
         for (const k of m.pack.kinds) w.seasonal.pantryKinds.add(k);
+        if (m.quirk === 'collector' && m.pack.items > 0 && w.rng.chance(0.35)) {
+          w.trinkets++;
+          m.notice = '🐚';
+          m.noticeTimer = 1.5;
+          if (w.trinkets === 3) w.toast(`🐚 ${m.name}'s shiny pebble & shell collection is the talk of the burrow (pageant decor!)`, 'good');
+        }
         m.pack = emptyPack();
         w.interrupt(m);
       }
@@ -95,6 +112,25 @@ export function updateMeerkat(w: World, m: Meerkat, dt: number): void {
         w.interrupt(m);
       }
       return;
+    case 'Stretching':
+      m.timer -= dt;
+      if (m.timer <= 0) {
+        m.status.chilly = false;
+        m.quirkDay = w.clock.day;
+        m.notice = '🌞';
+        m.noticeTimer = 1.2;
+        w.interrupt(m);
+      }
+      return;
+    case 'Playing':
+      m.timer -= dt;
+      if (m.timer <= 0) w.interrupt(m);
+      return;
+    case 'Flipping': {
+      const sc = w.scorpions.find((k) => k.id === m.targetId);
+      if (!sc || sc.state !== 'revealed') w.interrupt(m);
+      return;
+    }
     case 'Waiting':
       m.timer -= dt;
       if (m.timer <= 0) w.interrupt(m);
@@ -191,6 +227,28 @@ export function arrive(w: World, m: Meerkat): void {
       m.state = 'Hiding';
       m.timer = 1;
       return;
+    case 'stretch':
+      m.state = 'Stretching';
+      m.timer = 10;
+      m.facing = 1;
+      return;
+    case 'play':
+      m.state = 'Playing';
+      m.timer = w.rng.range(2, 4);
+      return;
+    case 'flip': {
+      const sc = w.scorpions.find((k) => k.id === m.targetId);
+      if (!sc || sc.state !== 'revealed') return w.interrupt(m);
+      m.state = 'Flipping';
+      m.facing = sc.x + 0.5 > m.x ? 1 : -1;
+      return;
+    }
+    case 'follow':
+      if (w.squad.has(m.id) && w.onSurface(m)) {
+        m.state = 'Following';
+        return;
+      }
+      return wait(w, m, 0.6);
     case 'rally': {
       const c = w.cobraById(m.cobraId);
       if (!c || (c.state !== 'ambush' && c.state !== 'mob')) return w.interrupt(m);
@@ -215,6 +273,7 @@ export function decide(w: World, m: Meerkat): void {
   if (phase === 'Night') return goToBed(w, m);
 
   const r = bfs(w.grid, w.cellOf(m));
+  if (m.pup) return decidePup(w, m, r);
   const full = m.pack.items >= w.packSlots(m);
   if (m.pack.items > 0 && (phase === 'Dusk' || full) && goUnload(w, m, r)) return;
 
@@ -228,6 +287,21 @@ export function decide(w: World, m: Meerkat): void {
     if (w.goToVia(m, r, w.huddleCell(m), 'huddle')) return;
   }
   if (m.stamina < CFG.NAP_BELOW && w.goToVia(m, r, w.napSpot(m), 'nap')) return;
+  // Sunbather: a long stretch on a warm rock, once each morning.
+  if (m.quirk === 'sunbather' && phase === 'Morning' && m.quirkDay !== w.clock.day && !w.surfaceDanger) {
+    if (w.goToVia(m, r, w.huddleCell(m), 'stretch')) return;
+  }
+  // Squad Whistle: trot out to the Alpha's follow-line.
+  if (w.squad.has(m.id) && !w.surfaceDanger) {
+    const sx = w.squadSlotX(m);
+    if (sx !== null) {
+      if (w.onSurface(m)) {
+        m.state = 'Following';
+        return;
+      }
+      if (w.goToVia(m, r, w.grid.idx(Math.floor(sx), SY - 1), 'follow')) return;
+    } else w.squad.delete(m.id);
+  }
 
   if (m.role === 'Sentry') {
     if (w.goToVia(m, r, w.sentryPost(m).cell, 'post')) return;
@@ -254,6 +328,56 @@ export function decide(w: World, m: Meerkat): void {
   // Digger
   if (tryDig(w, m, r, true)) return;
   return wanderHome(w, m, r);
+}
+
+function decidePup(w: World, m: Meerkat, r: BfsResult): void {
+  if (w.surfaceDanger && w.onSurface(m)) return flee(w, m);
+  const mentor = w.meerkatById(m.mentorId);
+  if (mentor && !['Sleeping', 'Held', 'Led'].includes(mentor.state) && !(w.surfaceDanger && w.onSurface(mentor))) {
+    const target = w.cellOf(mentor);
+    if (Math.abs(mentor.x - m.x) + Math.abs(mentor.y - m.y) <= 1.5) return wait(w, m, 0.8);
+    if (w.goToVia(m, r, target, 'follow')) return;
+  }
+  const play = w.builtRooms('playroom')[0];
+  if (play) {
+    const spot = w.grid.idx(play.x + w.rng.int(0, play.w - 1), play.y + play.h - 1);
+    if (r.dist[spot] >= 0 && w.goToVia(m, r, spot, 'play')) return;
+  }
+  return wanderHome(w, m, r);
+}
+
+/** Squad member trotting along the surface behind the Alpha. */
+function follow(w: World, m: Meerkat, dt: number): void {
+  const sx = w.squadSlotX(m);
+  if (sx === null || !w.onSurface(m) || !w.squad.has(m.id)) {
+    w.squad.delete(m.id);
+    return w.interrupt(m);
+  }
+  const d = sx - m.x;
+  if (Math.abs(d) > 0.15) {
+    m.facing = d > 0 ? 1 : -1;
+    const step = CFG.SPEED_SURFACE * 1.25 * w.speedMult(m) * dt;
+    m.x += Math.sign(d) * Math.min(Math.abs(d), step);
+  }
+  m.y = SY - 0.5;
+}
+
+/** Clumsy Hopper: trips once a day while hauling snacks across the surface. */
+function clumsyTrip(w: World, m: Meerkat, dt: number): void {
+  if (m.quirk !== 'clumsy' || m.quirkDay === w.clock.day || !w.onSurface(m) || m.pack.value <= 0) return;
+  if (m.state !== 'Walking' || !w.rng.chance(dt * 0.15)) return;
+  m.quirkDay = w.clock.day;
+  const food = m.pack.items - m.pack.grass - m.pack.gems;
+  if (food > 0) w.spill(m.x, food, m.pack.value);
+  m.pack = { ...emptyPack(), items: m.pack.grass + m.pack.gems, grass: m.pack.grass, gems: m.pack.gems };
+  w.interrupt(m);
+  m.state = 'Dizzy';
+  m.timer = 1.2;
+  m.notice = '🤸';
+  m.noticeTimer = 1.2;
+  const pups = w.pups;
+  for (const p of pups) p.growth = Math.min(0.99, p.growth + 0.03);
+  w.toast(`🤸 Whoops! ${m.name} tripped and scattered snacks everywhere${pups.length ? '. The pups chase them squealing (+play XP)!' : '.'}`);
 }
 
 function goToBed(w: World, m: Meerkat): void {
@@ -340,7 +464,7 @@ function tryForage(w: World, m: Meerkat, r: BfsResult): boolean {
   let best = null;
   let bestScore = 0;
   for (const n of w.nodes) {
-    if (n.stock <= 0 || n.hidden || w.nearRevealedCobra(n.x)) continue;
+    if (n.stock <= 0 || n.hidden || w.nearRevealedCobra(n.x) || w.guardedNode(n.id)) continue;
     const stand = g.idx(n.x, SY - 1);
     const d = r.dist[stand];
     if (d < 0) continue;
@@ -378,12 +502,22 @@ export function flee(w: World, m: Meerkat): void {
 
 /** Alarm handler: every meerkat subscribes to the AlarmEventBus with this. */
 export function onAlert(w: World, m: Meerkat, a: PredatorAlert): void {
-  if (m.state === 'Held' || m.state === 'Sleeping' || m.state === 'Dizzy') return;
+  if (m.state === 'Held' || m.state === 'Sleeping' || m.state === 'Dizzy' || m.state === 'Ouch' || m.state === 'Led') return;
 
-  if (a.type === 'eagle' || a.type === 'evacuate') {
+  if (a.type === 'eagle' || a.type === 'evacuate' || a.type === 'jackal' || a.type === 'badger') {
     if (m.state === 'Posted') return; // the perch has its own hidey-hole
     if (w.onSurface(m)) {
-      if (m.state === 'Fleeing' || m.state === 'Hiding') return;
+      if (m.state === 'Fleeing' || m.state === 'Hiding' || m.state === 'Fainting' || m.state === 'Startled') return;
+      if (m.quirk === 'faint') {
+        // Dramatic Faint: a theatrical swoon first. The pups think it's hilarious.
+        w.interrupt(m);
+        m.state = 'Fainting';
+        m.timer = 0.5;
+        m.notice = '😱';
+        m.noticeTimer = 1;
+        if (w.pups.length) w.addMorale(1);
+        return;
+      }
       flee(w, m);
       return;
     }
@@ -395,7 +529,7 @@ export function onAlert(w: World, m: Meerkat, a: PredatorAlert): void {
   if (a.type === 'cobra') {
     const c = w.cobraById(a.predatorId ?? null);
     if (!c || c.state !== 'ambush') return;
-    if (m.role === 'Sentry' || m.cobraId === c.id) return;
+    if (m.role === 'Sentry' || m.pup || m.cobraId === c.id) return;
     if (['Fleeing', 'Hiding', 'Startled', 'Napping', 'Mobbing', 'Rallying'].includes(m.state)) return;
     if (w.surfaceDanger || w.clock.phase === 'Night') return;
     w.interrupt(m);

@@ -100,6 +100,57 @@ export const CFG = {
     firstDay: 2,
     firstDelay: 30,
   },
+
+  PUP: {
+    /** Colony morale needed for a pup to be born in the Playroom each morning. */
+    morale: 70,
+    perPlayroom: 2,
+    birthChance: 0.6,
+    /** Days of awake time for an unmentored pup to grow up. */
+    days: 4,
+    /** Growth bonus while shadowing a mentor (doubled by Inspired Youth). */
+    mentorBonus: 1,
+    /** A pup inherits its mentor's Skill Trait if at least this much of its growth was mentored. */
+    inherit: 0.4,
+    followRange: 3,
+  },
+
+  JACKAL: {
+    firstDay: 3,
+    firstDelay: 40,
+    minGap: 90,
+    maxGap: 150,
+    patrol: 2.4,
+    chase: 4.6,
+    sight: 9,
+    /** How long a jackal barks at a hole it chased a meerkat into (spec: 20s). */
+    block: 20,
+    decoyCost: 1,
+  },
+
+  SCORPION: {
+    ouch: 4,
+    flipTime: 1.5,
+    flipNeeded: 2,
+  },
+
+  BADGER: {
+    /** Late game only: from this season number on (1 = Emerald Rains). */
+    fromSeason: 3,
+    minGap: 140,
+    maxGap: 220,
+    speed: 2,
+    notice: 7,
+    /** Seconds of Digger work to repair a bulldozed bolt-hole (spec: 10s). */
+    repair: 10,
+    honeyTime: 12,
+  },
+
+  /** Seconds of role work needed for 2, 3, 4 and 5 Role Mastery stars. */
+  MASTERY: [90, 240, 480, 800],
+
+  /** Seconds between browser autosaves. */
+  AUTOSAVE: 30,
 };
 
 export const SY = CFG.SURFACE_Y;

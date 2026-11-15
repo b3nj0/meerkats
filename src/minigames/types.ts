@@ -17,6 +17,8 @@ export interface MiniGameContext {
   scene: Phaser.Scene;
   area: Phaser.Geom.Rectangle;
   target?: Meerkat;
+  /** Feast Frenzy: the visiting mob being hosted. */
+  packId?: number;
 }
 
 export function rand(a: number, b: number): number {

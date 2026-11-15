@@ -5,6 +5,7 @@ This PoC covers **all four spec milestones**:
 - **M1 + M2:** the cutaway burrow, digging, Tier 1 rooms, the day/night loop, foraging, the Martial Eagle and the Cape Cobra, Sentry alarms, bolt-holes and the Sand-Kick Mob.
 - **M3:** the 4-season weather loop, Sniff & Dig, accessory crafting, and three 15-second room mini-games.
 - **M4:** Tier 2/3 grand rooms, spatial synergies, room themes, neighbouring packs that visit to trade, and the seasonal Burrow Pageant.
+- **Beyond the milestones:** pups and mentorship, skill traits and comedy quirks, Role Mastery stars, the Grand Banquet Hall, a mini-game in every room except the Den, seven craftable accessories, the jackal, scorpion and honey badger, save/load, gamepad controls, and an iOS (Capacitor) project.
 
 ## Run it
 
@@ -36,12 +37,25 @@ npm run build      # static build in dist/
 | Evacuate | 📯 Alarm button or `Space` | Alarm button |
 | Rally against a cobra | tap the revealed cobra | same |
 | Speed | `1` `2` `3`, `P` to pause | top-right buttons |
+| Mentor a pup | drag an adult onto a pup, or use the pup's card | same |
+| Decoy a jackal / flip a scorpion / honeycomb a badger | tap the predator | same |
+| Save / new burrow | 💾 button (autosaves every 30 s and when you leave) | same |
+
+**Gamepad** (any standard controller):
+- **Left stick / d-pad:** lead the Alpha scout along the surface. Push while it's underground to send it up; pull down over a hole to dive in.
+- **A:** Squad Whistle. Nearby meerkats fall into a follow-line, and pressing again dismisses them.
+- **B:** dive into a hole. **X:** forage underfoot. **Y:** pick the next Alpha.
+- **LB:** scatter (evacuate). **RB:** rally against the nearest threat.
+- **Right stick:** look around. **Triggers:** zoom. **Start:** pause.
+
+Add `?new` to the URL to ignore the save and start fresh.
 
 Dev-only keys (also enabled with `?debug`):
 - `E` spawns an eagle and `C` spawns a cobra.
 - `N` skips to the next phase and `X` jumps to the next season.
 - `M` gives 10 🌾, 10 💎, 5 ⭐ and a full pantry.
 - `G` runs a Burrow Pageant now and `V` sends a visiting scout.
+- `J` jackal, `B` honey badger, `K` scorpion, `U` pup.
 
 In devtools, `window.world` is the live simulation and `window.game` is the Phaser game.
 
@@ -64,7 +78,10 @@ A season lasts `CFG.SEASON_DAYS` days. The spec says 10; the PoC uses 5 so a pla
 | 👒 Sun Hat | 4🌾 | No heatwave Sweaty |
 | 🌰 Acorn-Cap Helmet | 2🌾 1💎 | +25% digging |
 | 🥽 Amber Goggles | 1🌾 2💎 | See through haboobs, never Dusty |
+| 🌼 Wildflower Crown | 3🌾 1💎 | 2+ crowns: +1 Colony Spirit star |
+| 🧐 Carved Wood Monocle | 2🌾 2💎 | Scout diplomacy: better trade offers |
 | 🎒 Gourd Pack | 3🌾 2💎 | Carry 6 items instead of 4 |
+| 👝 Crystal-Trimmed Pouch | 4🌾 5💎 | Carry 8 items |
 
 **Mini-games** can be played once per room per day. They last 15 seconds, and a **Perfect!** round doubles the reward.
 
@@ -73,6 +90,12 @@ A season lasts `CFG.SEASON_DAYS` days. The spec says 10; the PoC uses 5 so a pla
 | 🔭 Horizon Spotter | Perch | Sweep binoculars through the heat haze and tag what you see | Berry patches: food. Buried loot: gems. Shadows: +25% radar today |
 | 🧺 Trail-Mix Sort | Cellar | Drag falling snacks into matching baskets and flick dung beetles away | Food |
 | 🪮 Burr & Beetle Brush | Sun-Parlor | Rub off the dust and pop the tail burrs | Cures Dusty/Burr-tangled, Groomed (+10% speed), morale |
+| 🧵 Weaver's Knot | Workshop | Drag matching grass fibres across the loom without crossing | 🌾 per knot (Perfect: +1 💎) |
+| 🧸 Tumble-Tag | Pups' Playroom | Simon Says: copy the Elder's hops, tail-wags and sand-kicks | Pups grow, morale |
+| 🎭 Shadow Puppets | Amphitheater | Pick the paw shape matching the silhouette in the tale | ⭐ Prestige, morale |
+| 🍄 Prism Alignment | Conservatory | Rotate crystal mirrors to bounce the sunbeam onto the bloom | 2 🍓 per bloom, truffles for the pantry |
+| 🏊 Acorn Water Polo | Aquifer Lagoon | Bop the berry over the vine net | Oasis Refreshed, morale, ⭐ |
+| 🍽️ Feast Frenzy | Banquet Hall | Slide platters to guests before their patience runs out | Friendship → trading partners |
 
 ### Grand Burrow & Pageants (Milestone 4)
 
@@ -116,6 +139,45 @@ Rewards build on each other, so a higher ribbon also gets the lower ones:
 
 Every pageant also grants +1 to +8 ⭐ Prestige.
 
+### Pups, traits & new threats
+
+**Traits & quirks:** every meerkat has one Skill Trait and one Comedy Quirk (see its card).
+
+| Trait | Effect | Quirk | Effect |
+| --- | --- | --- | --- |
+| 👁️ Eagle-Eyed | +25% radar, spots hidden cobras | 😱 Dramatic Faint | swoons 0.5 s before fleeing an alarm |
+| 🐀 Tunnel Rat | +30% speed underground, ignores haboobs | 🐚 Gourd Collector | brings home trinkets (3+ = Cozy star) |
+| 🌿 Green Paw | +20% Conservatory growth | 🌞 Sunbather | 10 s morning stretch, +15% work that afternoon |
+| 💨 Sand-Kicker | counts as 2 in a Sand-Kick Mob | 💬 Chatterbox | coworkers nearby work 10% faster, +morale |
+| 🥔 Iron Stomach | no pantry supper in the Long Dry | 🤸 Clumsy Hopper | trips once a day and spills snacks (pups get play XP) |
+
+**Role Mastery:** meerkats earn 1–5 ★ in each role from time spent working it. Stars show in the Mob list and on each card.
+
+| Role | Perks |
+| --- | --- |
+| 🔭 Sentry | +6% radar per star · 4★ spots buried loot in range · 5★ makes eagles hover 1.5 s longer before swooping |
+| 🍓 Forager | +5% dune sprinting per star · 3★ +1 backpack slot · 5★ can Tail-Dodge & Flip a scorpion alone |
+| ⛏️ Digger | +10% digging per star · 4★ +50% in Long Dry soil · +25% gem finds per star |
+
+**Pups:** build a 🧸 Pups' Playroom (6🍓 1💎). On mornings when morale is 70 or higher, a pup may be born (up to 2 per Playroom).
+- Pups play, cheer up the colony and grow up in about 4 days.
+- Drag an adult onto a pup to make it the pup's mentor. A pup that shadows its mentor grows faster and inherits the mentor's Skill Trait.
+- **✨ Inspired Youth** (Playroom next to the Amphitheater) doubles mentorship XP.
+
+**🍽️ Grand Banquet Hall** (Tier 3, 14⭐, 10🍓 6💎): host a formal feast (6🍓) for a neighbouring mob by playing **Feast Frenzy**, sliding platters to guests before their patience runs out.
+- Reach ♥♥♥♥ (80 friendship) and they become permanent trading partners who send a gift every morning.
+- The hall adds a Hospitality star.
+
+**🏊 Acorn Water Polo** (Aquifer Lagoon): bop the berry over the vine net. Everyone becomes Oasis Refreshed, morale rises, and 3+ points earn ⭐.
+
+**New predators:**
+
+| Predator | When | Threat | Counter-play |
+| --- | --- | --- | --- |
+| 🐺 Black-Backed Jackal | afternoons from day 3 | patrols the dunes and chases foragers into a hole, then barks there, blocking it for 20 s | Sentry Deep Double-Bark (yellow border); tap it to toss a decoy gourd (1🍓); extra bolt-holes give another way out |
+| 🦂 Thick-Tailed Scorpion | Golden Sun, Dust Winds, Long Dry | hides under a flat rock guarding grubs/gems; pinches anyone digging there (4 s "ouch!" dance) | Sniff reveals it (claw-snap click); tap it so 2 meerkats Tail-Dodge & Flip a coconut shell over it |
+| 🦡 Honey Badger | afternoons from season 3 | waddles across and bulldozes bolt-holes (10 s of Digger repair) | Sentry Siren Hum clears the ground; tap it to knock down a wild honeycomb (once a day) |
+
 ### Loop
 - **Morning:** foragers huddle in the sun at the entrance.
 - **Afternoon:** surface run.
@@ -135,8 +197,10 @@ src/sim/        Pure TypeScript simulation, no Phaser. Unit-tested and portable.
   Grid.ts, Pathfinder.ts (BFS), Clock.ts, AlarmEventBus.ts, JobQueue.ts, Rooms.ts, Surface.ts
   Seasons.ts, Gear.ts  season table, weather, craftable gear
   Pageant.ts, Neighbors.ts  pageant scoring, neighbour packs and trades
-  predators/      Eagle.ts, Cobra.ts
-src/minigames/  HorizonSpotter, TrailMixSort, BurrBrush (hosted by scenes/MiniGameScene.ts)
+  predators/      Eagle.ts, Cobra.ts, Jackal.ts, Scorpion.ts, Badger.ts
+  World.serialize() / World.load()  save games (plain JSON)
+src/minigames/  HorizonSpotter, TrailMixSort, BurrBrush, WaterPolo, FeastFrenzy (hosted by scenes/MiniGameScene.ts)
+src/save.ts     localStorage autosave · src/platform.ts  haptics, orientation lock, safe-area insets
 src/render/     Phaser drawing: procedural tiles, sky, weather, meerkat sprites, WebAudio sfx
 src/scenes/     Boot, Game (camera, input, rendering), Hud (toolbar, roster, cards, goals, toasts), MiniGame, Pageant
 src/config.ts   every balance number in one place
@@ -144,19 +208,19 @@ src/config.ts   every balance number in one place
 
 The sim runs at a fixed 30 Hz step, separate from rendering. Speed controls only change how many steps run per frame.
 
-## Road to iPhone
+## iPhone app (Capacitor)
 
-The build uses relative asset paths (`base: './'`), has touch-first input and a responsive layout, so it can be wrapped with **Capacitor**:
+The Xcode project is in `ios/`, built with Capacitor 8 and Swift Package Manager (no CocoaPods). It's already set up for:
+- **Landscape only**, full screen with the status bar hidden (`Info.plist`), plus a runtime orientation lock.
+- **Safe areas:** the HUD keeps clear of the notch, Dynamic Island and home bar (`src/platform.ts`).
+- **Haptics:** alarms buzz and bumps tap, using `@capacitor/haptics`.
+- **Save/load:** the burrow persists in the app's web storage.
 
 ```sh
-npm i @capacitor/core @capacitor/ios && npm i -D @capacitor/cli
-npx cap init "Sunburst Hollow" com.example.sunbursthollow --web-dir dist
-npm run build && npx cap add ios && npx cap open ios   # needs Xcode
+npm run ios        # build, sync into ios/, open Xcode (needs Xcode installed)
+npm run ios:sync   # just rebuild + copy the web build into the iOS project
 ```
 
-Before shipping, the iOS build will need:
-- safe-area insets for the notch and home bar
-- a landscape orientation lock
-- haptics for alarms
-- save/load
-- real art and audio in place of the code-drawn placeholders
+In Xcode, pick your Team under *Signing & Capabilities*, change the bundle id from `com.example.sunbursthollow` (also in `capacitor.config.ts`), then run on a simulator or device.
+
+Before the App Store, you'll still need real art and audio, an app icon and launch screen, and a native save backup (for example, iCloud).

@@ -3,6 +3,12 @@ import { CFG } from '../config';
 import { BurrBrush } from '../minigames/BurrBrush';
 import { HorizonSpotter } from '../minigames/HorizonSpotter';
 import { TrailMixSort } from '../minigames/TrailMixSort';
+import { WaterPolo } from '../minigames/WaterPolo';
+import { FeastFrenzy } from '../minigames/FeastFrenzy';
+import { TumbleTag } from '../minigames/TumbleTag';
+import { WeaversKnot } from '../minigames/WeaversKnot';
+import { ShadowPuppets } from '../minigames/ShadowPuppets';
+import { PrismAlignment } from '../minigames/PrismAlignment';
 import type { MiniGame } from '../minigames/types';
 import { FONT } from '../render/MeerkatView';
 import { playSfx } from '../render/Sfx';
@@ -13,6 +19,7 @@ import type { GameScene } from './GameScene';
 
 export interface MiniGameInit {
   roomId: number;
+  packId?: number;
 }
 
 /** Hosts a 15-second room mini-game on top of the paused colony. */
@@ -29,6 +36,7 @@ export class MiniGameScene extends Phaser.Scene {
   private bar!: Phaser.Geom.Rectangle;
   private introT = 1.2;
   private countdown!: Phaser.GameObjects.Text;
+  private packId?: number;
 
   constructor() {
     super('MiniGame');
@@ -38,6 +46,7 @@ export class MiniGameScene extends Phaser.Scene {
     this.gs = this.scene.get('Game') as GameScene;
     this.world = this.gs.world;
     this.room = this.world.rooms.find((r) => r.id === data.roomId)!;
+    this.packId = data.packId;
     this.timeLeft = CFG.MINIGAME_SECONDS;
     this.state = 'intro';
     this.introT = 1.2;
@@ -64,8 +73,19 @@ export class MiniGameScene extends Phaser.Scene {
     const area = new Phaser.Geom.Rectangle(px + 10, py + header, pw - 20, ph - header - 10);
     const kind = ROOM_DEFS[this.room.type].miniGame!;
     const target = kind === 'brush' ? this.world.brushTarget() : undefined;
-    const ctx = { scene: this, area, target };
-    this.game_ = kind === 'spotter' ? new HorizonSpotter(ctx) : kind === 'sort' ? new TrailMixSort(ctx) : new BurrBrush(ctx);
+    const ctx = { scene: this, area, target, packId: this.packId };
+    const make: Record<typeof kind, () => MiniGame> = {
+      spotter: () => new HorizonSpotter(ctx),
+      sort: () => new TrailMixSort(ctx),
+      brush: () => new BurrBrush(ctx),
+      polo: () => new WaterPolo(ctx),
+      feast: () => new FeastFrenzy(ctx),
+      tumble: () => new TumbleTag(ctx),
+      weave: () => new WeaversKnot(ctx),
+      puppets: () => new ShadowPuppets(ctx),
+      prism: () => new PrismAlignment(ctx),
+    };
+    this.game_ = make[kind]();
 
     this.add
       .text(px + 16, py + 10, this.game_.title, { fontFamily: FONT, fontSize: compact ? '16px' : '20px', color: '#fff7e6', fontStyle: 'bold' })

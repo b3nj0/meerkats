@@ -32,6 +32,11 @@ export function mobbers(w: World, c: Cobra): Meerkat[] {
   return w.meerkats.filter((m) => m.cobraId === c.id && m.state === 'Mobbing');
 }
 
+/** Mob strength: a Sand-Kicker counts as two meerkats. */
+export function mobPower(w: World, c: Cobra): number {
+  return mobbers(w, c).reduce((n, m) => n + (m.trait === 'sandkicker' ? 2 : 1), 0);
+}
+
 /** The cobra rears up: whoever found it stands their ground and chirps for help. */
 export function triggerAmbush(w: World, c: Cobra, origin: Meerkat | null): void {
   c.state = 'ambush';
@@ -80,15 +85,20 @@ export function updateCobra(w: World, c: Cobra, dt: number): void {
         break;
       }
       const m = w.meerkats.find(
-        (k) => w.onSurface(k) && !NO_TRIGGER.includes(k.state) && Math.abs(k.x - (c.x + 0.5)) <= C.trigger,
+        (k) => w.onSurface(k) && !k.pup && !NO_TRIGGER.includes(k.state) && Math.abs(k.x - (c.x + 0.5)) <= C.trigger,
       );
       if (m) triggerAmbush(w, c, m);
+      // Eagle-Eyed meerkats spot hidden snakes from twice as far away.
+      if (!c.revealed && w.meerkats.some((k) => k.trait === 'eagleeyed' && w.onSurface(k) && Math.abs(k.x - (c.x + 0.5)) <= 6)) {
+        c.revealed = true;
+        w.toast('👁️ An Eagle-Eyed meerkat spotted a cobra hiding in the grass! Foragers will steer clear (or tap it to rally).', 'good');
+      }
       break;
     }
     case 'ambush': {
       c.t -= dt;
       const mob = mobbers(w, c);
-      if (mob.length >= C.mobNeeded) {
+      if (mobPower(w, c) >= C.mobNeeded) {
         c.state = 'mob';
         c.t = C.mobTime;
         for (const m of mob) m.kicking = true;

@@ -1,4 +1,4 @@
-export type RoomType = 'cellar' | 'den' | 'perch' | 'workshop' | 'parlor' | 'amphitheater' | 'lagoon' | 'conservatory';
+export type RoomType = 'cellar' | 'den' | 'perch' | 'workshop' | 'parlor' | 'playroom' | 'amphitheater' | 'lagoon' | 'conservatory' | 'banquet';
 export type Theme = 'sandstone' | 'rootwood' | 'crystal';
 
 export const THEMES: Record<Theme, { name: string; icon: string; bg: number; trim: number }> = {
@@ -7,7 +7,7 @@ export const THEMES: Record<Theme, { name: string; icon: string; bg: number; tri
   crystal: { name: 'Crystal Cavern', icon: '🔷', bg: 0x3d4a66, trim: 0x8fd3ff },
 };
 export const THEME_ORDER: Theme[] = ['sandstone', 'rootwood', 'crystal'];
-export type MiniGameKind = 'spotter' | 'sort' | 'brush';
+export type MiniGameKind = 'spotter' | 'sort' | 'brush' | 'polo' | 'feast' | 'tumble' | 'weave' | 'puppets' | 'prism';
 
 export interface RoomDef {
   type: RoomType;
@@ -88,7 +88,7 @@ export const ROOM_DEFS: Record<RoomType, RoomDef> = {
     color: 0xc8a2f0,
     blurb: 'Craft hats, goggles and bigger backpacks from 🌾 grass and 💎 gems.',
     tier: 2,
-    miniGame: null,
+    miniGame: 'weave',
   },
   parlor: {
     type: 'parlor',
@@ -105,6 +105,21 @@ export const ROOM_DEFS: Record<RoomType, RoomDef> = {
     tier: 2,
     miniGame: 'brush',
   },
+  playroom: {
+    type: 'playroom',
+    name: "Pups' Playroom",
+    icon: '🧸',
+    w: 5,
+    h: 3,
+    surface: false,
+    cost: 6,
+    gems: 1,
+    unlock: 0,
+    color: 0xffb3d9,
+    blurb: 'A happy colony (😊 70+) welcomes pups here. Drag an adult onto a pup to make it their mentor.',
+    tier: 2,
+    miniGame: 'tumble',
+  },
   amphitheater: {
     type: 'amphitheater',
     name: 'Storytelling Amphitheater',
@@ -118,7 +133,7 @@ export const ROOM_DEFS: Record<RoomType, RoomDef> = {
     color: 0xf5a3a3,
     blurb: 'Elders tell tales every night: +2 ⭐ Prestige, which unlocks Tier 3 blueprints.',
     tier: 2,
-    miniGame: null,
+    miniGame: 'puppets',
   },
   lagoon: {
     type: 'lagoon',
@@ -133,7 +148,7 @@ export const ROOM_DEFS: Record<RoomType, RoomDef> = {
     color: 0x5fd3d9,
     blurb: 'Underground spring: everyone is Oasis Refreshed (immune to heatwaves), dust washes off overnight, and judges love it.',
     tier: 3,
-    miniGame: null,
+    miniGame: 'polo',
   },
   conservatory: {
     type: 'conservatory',
@@ -148,22 +163,41 @@ export const ROOM_DEFS: Record<RoomType, RoomDef> = {
     color: 0xb0f0c8,
     blurb: 'Selenite-lit greenhouse: grows glowing mushrooms all year, even in the Long Dry (+1 food every 20s).',
     tier: 3,
-    miniGame: null,
+    miniGame: 'prism',
+  },
+  banquet: {
+    type: 'banquet',
+    name: 'Grand Banquet Hall',
+    icon: '🍽️',
+    w: 7,
+    h: 3,
+    surface: false,
+    cost: 10,
+    gems: 6,
+    unlock: 14,
+    color: 0xf0c27a,
+    blurb: 'Host formal feasts for neighbouring mobs. A great feast turns them into permanent trading partners who send gifts.',
+    tier: 3,
+    miniGame: 'feast',
   },
 };
 
+/** Tier 3 wonder rooms, in blueprint order. */
+export const WONDERS: RoomType[] = ['lagoon', 'conservatory', 'banquet'];
+
 export interface SynergyDef {
-  id: 'quickdrop' | 'spa' | 'glow';
+  id: 'quickdrop' | 'spa' | 'glow' | 'youth';
   name: string;
   a: RoomType | 'entrance';
   b: RoomType;
   blurb: string;
 }
 
-/** Spatial Synergy Matrix (spec 5.4). Inspired Youth waits on the Pups' Playroom. */
+/** Spatial Synergy Matrix (spec 5.4). */
 export const SYNERGIES: SynergyDef[] = [
   { id: 'quickdrop', name: 'Quick Drop-Off', a: 'entrance', b: 'cellar', blurb: 'Root Cellar beside the entrance: +40% faster unloading' },
   { id: 'spa', name: 'Resort Spa', a: 'lagoon', b: 'parlor', blurb: 'Aquifer Lagoon next to the Sun-Parlor: everyone wakes Groomed, +2 morale a day' },
+  { id: 'youth', name: 'Inspired Youth', a: 'playroom', b: 'amphitheater', blurb: "Pups' Playroom next to the Amphitheater: 2× mentorship XP for pups" },
   { id: 'glow', name: 'Artisan Glow', a: 'workshop', b: 'conservatory', blurb: 'Workshop next to the Conservatory: bioluminescent lanterns and crystal-tipped tools (+20% digging)' },
 ];
 
@@ -171,6 +205,12 @@ export const MINIGAME_NAMES: Record<MiniGameKind, string> = {
   spotter: 'Horizon Spotter',
   sort: 'Trail-Mix Sort',
   brush: 'Burr & Beetle Brush',
+  polo: 'Acorn Water Polo',
+  feast: 'Feast Frenzy',
+  tumble: 'Tumble-Tag',
+  weave: "Weaver's Knot",
+  puppets: 'Shadow Puppets',
+  prism: 'Prism Alignment',
 };
 
 export interface Room {

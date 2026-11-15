@@ -1,7 +1,10 @@
 import Phaser from 'phaser';
 import { CFG, SY } from '../config';
-import { mobbers, type Cobra } from '../sim/predators/Cobra';
+import { mobPower, type Cobra } from '../sim/predators/Cobra';
 import type { Eagle } from '../sim/predators/Eagle';
+import type { Jackal } from '../sim/predators/Jackal';
+import { flipTeam, type Scorpion } from '../sim/predators/Scorpion';
+import type { Badger } from '../sim/predators/Badger';
 import { ROOM_DEFS, THEMES, type Room } from '../sim/Rooms';
 import { PALETTES } from '../sim/Meerkat';
 import type { Visitor } from '../sim/Neighbors';
@@ -137,6 +140,58 @@ export function drawRoom(g: G, w: World, r: Room, time: number): void {
       g.fillStyle(0xfff27a, on ? 0.9 : 0.25);
       g.fillCircle(px + 8 + k * 12 + Math.sin(time * 0.002 + k) * 2, py + 7 + Math.cos(time * 0.003 + k) * 2, 1.2);
     }
+  } else if (r.type === 'playroom') {
+    // berry-juice pawprints, a hollow-log slide, pebble pit and a vine swing
+    g.fillStyle(0xd23c4a, 0.55);
+    for (let k = 0; k < 5; k++) {
+      const x = px + 8 + k * 14;
+      const y = py + 8 + (k % 2) * 6;
+      g.fillCircle(x, y, 2);
+      g.fillCircle(x - 2.5, y - 2.5, 0.9);
+      g.fillCircle(x, y - 3.5, 0.9);
+      g.fillCircle(x + 2.5, y - 2.5, 0.9);
+    }
+    g.fillStyle(0x8b5a2b, 1);
+    g.fillTriangle(px + pw - 6, py + 14, px + pw - 6, py + ph - 2, px + pw - 30, py + ph - 2);
+    g.fillStyle(0xa86b3c, 1);
+    g.fillTriangle(px + pw - 9, py + 18, px + pw - 9, py + ph - 4, px + pw - 25, py + ph - 4);
+    for (let k = 0; k < 7; k++) {
+      g.fillStyle([0xb2aca3, 0xe6e1d8, 0x8a7f72][k % 3], 1);
+      g.fillCircle(px + 10 + k * 3.5, py + ph - 3 - (k % 2) * 2, 2);
+    }
+    const sw = Math.sin(time * 0.003) * 4;
+    g.lineStyle(1, 0x5d8a3a, 1);
+    g.lineBetween(px + pw * 0.45, py, px + pw * 0.45 + sw, py + ph - 14);
+    g.lineBetween(px + pw * 0.55, py, px + pw * 0.55 + sw, py + ph - 14);
+    g.fillStyle(0x8b5a2b, 1);
+    g.fillRect(px + pw * 0.43 + sw, py + ph - 15, pw * 0.14, 2);
+  } else if (r.type === 'banquet') {
+    // carved-root banquet table, leaf plates and berry-juice chandeliers
+    g.fillStyle(0x6b4423, 1);
+    g.fillRoundedRect(px + 8, py + ph - 14, pw - 16, 5, 2);
+    for (let x = px + 12; x < px + pw - 10; x += 18) g.fillRect(x, py + ph - 9, 2.5, 8);
+    for (let x = px + 16; x < px + pw - 14; x += 14) {
+      g.fillStyle(0x6fb04a, 1);
+      g.fillEllipse(x, py + ph - 15, 8, 2.5);
+      g.fillStyle(x % 3 ? 0xd23c4a : 0x8fbf4a, 1);
+      g.fillCircle(x, py + ph - 16.5, 1.5);
+    }
+    for (let k = 0; k < 3; k++) {
+      const cx = px + pw * (0.25 + k * 0.25);
+      g.lineStyle(0.8, 0xd9a55b, 1);
+      g.lineBetween(cx, py, cx, py + 7);
+      const glow = 0.5 + Math.sin(time * 0.004 + k) * 0.2;
+      g.fillStyle(0xd23c4a, glow * 0.4);
+      g.fillCircle(cx, py + 9, 6);
+      g.fillStyle(0xe0566a, 1);
+      for (let j = -1; j <= 1; j++) g.fillCircle(cx + j * 3, py + 9 + Math.abs(j), 1.6);
+    }
+    const partners = w.neighbors.filter((n) => n.partner);
+    partners.forEach((n, i) => {
+      g.fillStyle(n.color, 1);
+      g.fillRect(px + 4 + i * 8, py + 3, 5, 8);
+      g.fillTriangle(px + 4 + i * 8, py + 11, px + 9 + i * 8, py + 11, px + 6.5 + i * 8, py + 14);
+    });
   } else if (r.type === 'den') {
     for (let k = 0; k < CFG.DEN_CAPACITY; k++) {
       const bx = (r.x + 1 + k) * S + S / 2;
@@ -464,11 +519,136 @@ export function drawCobra(g: G, c: Cobra, time: number): void {
   }
 }
 
+export function drawJackal(g: G, j: Jackal, time: number): void {
+  const cx = j.x * S;
+  const gy = GROUND;
+  const run = j.state === 'chase' || j.state === 'decoy' || j.state === 'leaving';
+  const bob = run ? Math.abs(Math.sin(time * 0.025)) * 2 : Math.abs(Math.sin(time * 0.012)) * 1;
+  const d = j.dir;
+  g.fillStyle(0xb5763a, 1);
+  g.fillEllipse(cx, gy - 9 - bob, 18, 8);
+  g.fillStyle(0x2b2522, 1);
+  g.fillEllipse(cx - d * 1, gy - 12 - bob, 12, 4); // the black saddle
+  g.fillStyle(0xb5763a, 1);
+  const leg = run ? Math.sin(time * 0.03) * 3 : 0;
+  g.fillRect(cx - 7, gy - 7, 2, 7 + Math.min(0, leg));
+  g.fillRect(cx + 5 + leg, gy - 7, 2, 7);
+  g.lineStyle(3, 0xb5763a, 1);
+  g.lineBetween(cx - d * 9, gy - 10 - bob, cx - d * 14, gy - 6 - bob);
+  g.fillStyle(0xc9884a, 1);
+  g.fillEllipse(cx + d * 10, gy - 14 - bob, 8, 6);
+  g.fillTriangle(cx + d * 12, gy - 14 - bob, cx + d * 18, gy - 12 - bob, cx + d * 12, gy - 11 - bob);
+  g.fillStyle(0x8a5a2a, 1);
+  g.fillTriangle(cx + d * 8, gy - 16 - bob, cx + d * 9, gy - 21 - bob, cx + d * 11, gy - 16 - bob);
+  g.fillStyle(0x1a1a1a, 1);
+  g.fillCircle(cx + d * 11.5, gy - 15 - bob, 0.8);
+  if (j.state === 'decoy') {
+    g.fillStyle(0xe8a33c, 1);
+    g.fillCircle(j.decoyX * S, gy - 3, 3.5);
+  }
+}
+
+export function drawScorpion(g: G, w: World, s: Scorpion, time: number): void {
+  const cx = (s.x + 0.5) * S;
+  const gy = GROUND;
+  if (s.state === 'flipped') {
+    g.fillStyle(0x6b4423, 1);
+    g.fillEllipse(cx, gy - 3, 13, 9);
+    g.fillStyle(0x8b5a2b, 1);
+    g.fillEllipse(cx - 1, gy - 4.5, 7, 3);
+    g.fillStyle(0x3d2412, 1);
+    for (const [x, y] of [[-2, -5], [1, -5], [-0.5, -2.5]]) g.fillCircle(cx + x, gy + y, 0.8);
+    return;
+  }
+  // the flat rock it hides under
+  g.fillStyle(0x8a7f72, 1);
+  g.fillEllipse(cx, gy - 2, 16, 5);
+  g.fillStyle(0xa79d8f, 1);
+  g.fillEllipse(cx - 1, gy - 3, 11, 2.5);
+  if (s.state === 'hidden') return;
+  const snap = Math.floor(time / 300) % 2 ? 1.2 : 0;
+  const team = flipTeam(w, s).length > 0;
+  g.fillStyle(0x6b5a2a, 1);
+  g.fillEllipse(cx + 6, gy - 2, 8, 3.5);
+  g.lineStyle(1.4, 0x6b5a2a, 1);
+  g.lineBetween(cx + 9, gy - 2, cx + 12, gy - 5);
+  g.lineBetween(cx + 12, gy - 5, cx + 11, gy - 9);
+  g.fillStyle(0xd23c4a, 1);
+  g.fillCircle(cx + 10.5, gy - 9.5, 1);
+  g.fillStyle(0x6b5a2a, 1);
+  g.fillCircle(cx + 1.5, gy - 3 - snap, 1.8);
+  g.fillCircle(cx + 1.5, gy - 1 + snap, 1.8);
+  if (team) {
+    g.lineStyle(1, 0x8b5a2b, 1);
+    g.lineBetween(cx - 8, gy - 6, cx - 1, gy - 3 + Math.sin(time * 0.02) * 1.5);
+  }
+}
+
+export function drawBadger(g: G, b: Badger, time: number): void {
+  const cx = b.x * S;
+  const gy = GROUND;
+  const d = b.dir;
+  const sway = b.state === 'eating' ? 0 : Math.sin(time * 0.012) * 1;
+  g.fillStyle(0x1f1f1f, 1);
+  g.fillEllipse(cx, gy - 7, 22, 12);
+  g.fillStyle(0xe6e1d8, 1);
+  g.fillEllipse(cx - d * 1, gy - 11.5 + sway * 0.3, 20, 5); // white mantle
+  g.fillStyle(0x1f1f1f, 1);
+  g.fillRect(cx - 8, gy - 3, 3, 3);
+  g.fillRect(cx + 5, gy - 3, 3, 3);
+  g.fillEllipse(cx + d * 11, gy - 7, 8, 7);
+  g.fillStyle(0xe6e1d8, 1);
+  g.fillEllipse(cx + d * 10, gy - 10, 7, 2);
+  g.fillStyle(0xffffff, 1);
+  g.fillCircle(cx + d * 13, gy - 8, 0.7);
+  if (b.state === 'eating') {
+    g.fillStyle(0xf2b52e, 1);
+    g.fillRoundedRect(cx + d * 14 - 4, gy - 7, 8, 6, 1.5);
+    g.lineStyle(0.6, 0xb57f12, 1);
+    for (let k = 0; k < 3; k++) g.strokeCircle(cx + d * 14 - 2 + k * 2, gy - 4, 1);
+  }
+}
+
+/** Jackals blocking a hole leave a bark marker over it. */
+export function drawBlocked(g: G, w: World, time: number): void {
+  for (const j of w.jackals) {
+    if (j.hole < 0) continue;
+    const x = j.hole * S;
+    const a = 0.45 + Math.sin(time * 0.01) * 0.25;
+    g.fillStyle(0xffd23f, a);
+    g.fillRect(x, GROUND, S, 4);
+    g.lineStyle(1.5, 0xe5442e, 0.9);
+    g.lineBetween(x + 2, GROUND + 1, x + S - 2, GROUND + 6);
+    g.lineBetween(x + S - 2, GROUND + 1, x + 2, GROUND + 6);
+  }
+}
+
+export function predatorLabel(kind: 'jackal' | 'scorpion' | 'badger', p: Jackal | Scorpion | Badger, w: World): string {
+  if (kind === 'jackal') {
+    const j = p as Jackal;
+    if (j.state === 'barking') return `Woof! Woof! ${Math.ceil(j.t)}s · tap: decoy`;
+    if (j.state === 'chase') return 'Chasing! · tap: decoy';
+    if (j.state === 'patrol') return j.alerted ? 'Jackal · tap: decoy' : '';
+    if (j.state === 'decoy') return j.t > 0 ? 'sniff sniff…' : '';
+    return '';
+  }
+  if (kind === 'scorpion') {
+    const s = p as Scorpion;
+    if (s.state !== 'revealed') return '';
+    const n = flipTeam(w, s).length;
+    return n ? `Flip! ${n}/${CFG.SCORPION.flipNeeded}` : 'Tap: Tail-Dodge & Flip';
+  }
+  const b = p as Badger;
+  if (b.state === 'eating') return 'nom nom honey';
+  if (b.state === 'walking') return w.honeyDay === w.clock.day ? 'Honey badger' : 'Tap: drop honeycomb';
+  return '';
+}
+
 /** Floating labels for cobras (rally counter, tap hint, ACHOO!). */
 export function cobraLabel(w: World, c: Cobra): string {
   switch (c.state) {
     case 'ambush':
-      return `Rally! ${mobbers(w, c).length}/${CFG.COBRA.mobNeeded}`;
+      return `Rally! ${Math.min(CFG.COBRA.mobNeeded, mobPower(w, c))}/${CFG.COBRA.mobNeeded}`;
     case 'mob':
       return 'Kick! Kick!';
     case 'sneeze':

@@ -1,4 +1,4 @@
-export type AlertType = 'eagle' | 'cobra' | 'evacuate';
+export type AlertType = 'eagle' | 'cobra' | 'evacuate' | 'jackal' | 'badger';
 
 export interface PredatorAlert {
   type: AlertType;

@@ -101,6 +101,31 @@ export function playSfx(name: SfxName): void {
       beep(1320, 0, 0.08, 'sine', 0.07);
       beep(1760, 0.07, 0.14, 'sine', 0.07);
       break;
+    case 'bark': // Deep Double-Bark: low woof-woof!
+      beep(170, 0, 0.16, 'sawtooth', 0.09, 120);
+      beep(170, 0.24, 0.18, 'sawtooth', 0.09, 110);
+      break;
+    case 'hum': // Sustained Siren Hum
+      beep(330, 0, 1.4, 'triangle', 0.07, 349);
+      beep(165, 0, 1.4, 'sine', 0.05);
+      break;
+    case 'click': // Claw-Snap Click
+      for (let k = 0; k < 4; k++) noise(k * 0.07, 0.03, 0.5);
+      break;
+    case 'ouch':
+      beep(700, 0, 0.12, 'square', 0.05, 1100);
+      beep(1100, 0.14, 0.2, 'square', 0.05, 600);
+      break;
+    case 'thud':
+      beep(90, 0, 0.3, 'sine', 0.15, 50);
+      noise(0, 0.2, 0.3);
+      break;
+    case 'splash':
+      noise(0, 0.35, 0.35);
+      break;
+    case 'munch':
+      for (let k = 0; k < 4; k++) beep(260 + (k % 2) * 40, k * 0.12, 0.06, 'square', 0.04);
+      break;
     case 'error':
       beep(200, 0, 0.15, 'square', 0.04, 150);
       break;

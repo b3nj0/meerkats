@@ -17,6 +17,8 @@ export class Grid {
   readonly tiles: Uint8Array;
   /** Room id occupying each cell, or -1. Only underground rooms are recorded here. */
   readonly roomAt: Int16Array;
+  /** Cells temporarily impassable (a jackal barking at a hole). */
+  readonly blocked: Uint8Array;
   /** Cells changed since the renderer last looked. */
   readonly changed: number[] = [];
 
@@ -27,6 +29,7 @@ export class Grid {
   ) {
     this.tiles = new Uint8Array(w * h);
     this.roomAt = new Int16Array(w * h).fill(-1);
+    this.blocked = new Uint8Array(w * h);
   }
 
   idx(x: number, y: number): number {
@@ -51,6 +54,7 @@ export class Grid {
   }
 
   walkableAt(i: number): boolean {
+    if (this.blocked[i]) return false;
     const t = this.tiles[i];
     return t === T.Air || t === T.Tunnel || t === T.BoltHole;
   }

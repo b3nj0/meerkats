@@ -11,6 +11,8 @@ export interface NeighborPack {
   relation: number;
   color: number;
   last: { total: number; tier: string } | null;
+  /** Won over at a Grand Banquet feast: sends gifts every morning. */
+  partner: boolean;
 }
 
 export interface TradeOffer {
@@ -32,8 +34,8 @@ export interface Visitor {
 
 export function makeNeighbors(): NeighborPack[] {
   return [
-    { id: 1, name: 'Dune Ridge Mob', side: -1, relation: 20, color: 0x4a90d9, last: null },
-    { id: 2, name: 'Acacia Hollow Mob', side: 1, relation: 20, color: 0x9b59b6, last: null },
+    { id: 1, name: 'Dune Ridge Mob', side: -1, relation: 20, color: 0x4a90d9, last: null, partner: false },
+    { id: 2, name: 'Acacia Hollow Mob', side: 1, relation: 20, color: 0x9b59b6, last: null, partner: false },
   ];
 }
 

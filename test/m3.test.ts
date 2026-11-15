@@ -176,7 +176,8 @@ describe('Frost', () => {
     run(w, CFG.DAY_LENGTH * 0.06, () => w.clock.phase === 'Morning' && w.clock.frac > 0.001);
     expect(w.season.def.id).toBe('dry');
     expect(w.meerkats.every((m) => m.status.chilly)).toBe(true);
-    run(w, 30);
-    expect(w.meerkats.filter((m) => m.role !== 'Sentry').every((m) => !m.status.chilly)).toBe(true);
+    const warm = () => w.meerkats.filter((m) => m.role !== 'Sentry').every((m) => !m.status.chilly);
+    run(w, 60, warm);
+    expect(warm()).toBe(true);
   });
 });

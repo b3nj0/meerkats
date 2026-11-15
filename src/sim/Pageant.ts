@@ -66,35 +66,44 @@ export function scorePageant(w: World): PageantScore {
     name: 'Cozy Aesthetics',
     icon: '🕯️',
     stars: clampStars(
-      1 + (inside.length >= 2 && cohesion >= 0.6 ? 1 : 0) + (inside.length >= 3 && cohesion === 1 ? 1 : 0) + (tidy ? 1 : 0) + (glow ? 1 : 0),
+      1 + (inside.length >= 2 && cohesion >= 0.6 ? 1 : 0) + (inside.length >= 3 && cohesion === 1 ? 1 : 0) + (tidy ? 1 : 0) + (glow ? 1 : 0) + (w.trinkets >= 3 ? 1 : 0),
     ),
     notes: [
       inside.length ? `${Math.round(cohesion * 100)}% matching themes` : 'no rooms to admire yet',
       tidy ? 'tidy tunnels' : 'unfinished digging',
       ...(w.hasSynergy('glow') ? ['glowing lanterns'] : []),
       ...(w.unlocks.fountain ? ['a sandstone fountain'] : []),
+      ...(w.trinkets >= 3 ? [`${w.trinkets} shiny pebbles & shells`] : []),
     ],
   };
 
   // 3. Hospitality & Feast: pantry diversity and how well the best mini-game went.
   const div = w.seasonal.pantryKinds.size;
   const best = w.seasonal.bestMiniGame;
+  const hall = built.some((r) => r.type === 'banquet');
   const hosp: PageantCategory = {
     name: 'Hospitality & Feast',
     icon: '🍽️',
-    stars: clampStars(1 + (div >= 2 ? 1 : 0) + (div >= 4 ? 1 : 0) + (best >= 0.5 ? 1 : 0) + (best >= 0.9 ? 1 : 0)),
-    notes: [`${div} kind${div === 1 ? '' : 's'} of snack in the pantry`, best > 0 ? `best mini-game ${Math.round(best * 100)}%` : 'no mini-game shown off'],
+    stars: clampStars(1 + (div >= 2 ? 1 : 0) + (div >= 4 ? 1 : 0) + (best >= 0.5 ? 1 : 0) + (best >= 0.9 ? 1 : 0) + (hall ? 1 : 0)),
+    notes: [
+      `${div} kind${div === 1 ? '' : 's'} of snack in the pantry`,
+      best > 0 ? `best mini-game ${Math.round(best * 100)}%` : 'no mini-game shown off',
+      ...(hall ? ['a Grand Banquet Hall'] : []),
+    ],
   };
 
   // 4. Colony Spirit: happiness, groomed fur, accessories.
-  const n = Math.max(1, w.meerkats.length);
+  const adults = w.meerkats.filter((m) => !m.pup);
+  const n = Math.max(1, adults.length);
   const clean = w.meerkats.every((m) => !m.status.dusty && !m.status.burrs);
-  const geared = w.meerkats.filter((m) => m.gear.head || m.gear.eyes || m.gear.back).length / n;
+  const geared = adults.filter((m) => m.gear.head || m.gear.eyes || m.gear.back).length / n;
+  const pups = w.meerkats.length - adults.length;
+  const crowns = adults.filter((m) => m.gear.head === 'crown').length;
   const spirit: PageantCategory = {
     name: 'Colony Spirit',
     icon: '💛',
-    stars: clampStars(1 + (w.morale >= 50 ? 1 : 0) + (w.morale >= 75 ? 1 : 0) + (clean ? 1 : 0) + (geared >= 0.5 ? 1 : 0)),
-    notes: [`morale ${Math.round(w.morale)}`, clean ? 'clean, groomed fur' : 'some dusty coats', `${Math.round(geared * 100)}% wearing accessories`],
+    stars: clampStars(1 + (w.morale >= 50 ? 1 : 0) + (w.morale >= 75 ? 1 : 0) + (clean ? 1 : 0) + (geared >= 0.5 ? 1 : 0) + (crowns >= 2 ? 1 : 0)),
+    notes: [`morale ${Math.round(w.morale)}`, clean ? 'clean, groomed fur' : 'some dusty coats', `${Math.round(geared * 100)}% wearing accessories`, ...(pups ? [`${pups} happy pup${pups > 1 ? 's' : ''}`] : []), ...(crowns ? [`${crowns} wildflower crown${crowns > 1 ? 's' : ''}`] : [])],
   };
 
   const categories = [arch, cozy, hosp, spirit];

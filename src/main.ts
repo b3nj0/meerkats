@@ -4,6 +4,9 @@ import { GameScene } from './scenes/GameScene';
 import { HudScene } from './scenes/HudScene';
 import { MiniGameScene } from './scenes/MiniGameScene';
 import { PageantScene } from './scenes/PageantScene';
+import { lockLandscape } from './platform';
+
+lockLandscape();
 
 new Phaser.Game({
   type: Phaser.AUTO,
@@ -15,7 +18,7 @@ new Phaser.Game({
     height: window.innerHeight,
   },
   render: { antialias: true },
-  input: { activePointers: 3 },
+  input: { activePointers: 3, gamepad: true },
   disableContextMenu: true,
   scene: [BootScene, GameScene, HudScene, MiniGameScene, PageantScene],
 });

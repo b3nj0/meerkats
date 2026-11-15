@@ -3,13 +3,15 @@ import { CFG, SY, clamp } from '../config';
 import { FONT } from '../render/MeerkatView';
 import { isMuted, playSfx, setMuted } from '../render/Sfx';
 import { GEAR, GEAR_KINDS, SLOTS, SLOT_LABEL } from '../sim/Gear';
-import { PALETTES, ROLES, type Meerkat, type Role } from '../sim/Meerkat';
+import { MASTERY_PERKS, PALETTES, QUIRKS, ROLES, TRAITS, type Meerkat, type Role } from '../sim/Meerkat';
+import { clearSave, savedAt } from '../save';
+import { safeInsets } from '../platform';
 import { eagleGroundX } from '../sim/predators/Eagle';
-import { MINIGAME_NAMES, ROOM_DEFS, SYNERGIES, THEMES, THEME_ORDER, type Room, type RoomType } from '../sim/Rooms';
+import { MINIGAME_NAMES, ROOM_DEFS, SYNERGIES, THEMES, THEME_ORDER, WONDERS, type Room, type RoomType } from '../sim/Rooms';
 import { RES_ICON, type Visitor } from '../sim/Neighbors';
 import { RIBBON_LABEL, scorePageant } from '../sim/Pageant';
 import { WEATHER_LABEL } from '../sim/Seasons';
-import type { Tone, World } from '../sim/World';
+import { FEAST_COST, type Tone, type World } from '../sim/World';
 import { Button } from '../ui/Button';
 import type { GameScene, Tool } from './GameScene';
 
@@ -32,12 +34,13 @@ const TOOLS: ToolDef[] = [
   { key: 'erase', icon: '✖️', label: 'Cancel', tool: 'erase', hint: 'Drag over marked tiles or unfinished rooms to cancel them' },
   { key: 'sniff', icon: '👃', label: 'Sniff', tool: 'sniff', hint: '' },
 ];
-const ROOM_ORDER: RoomType[] = ['cellar', 'den', 'perch', 'workshop', 'parlor', 'amphitheater', 'lagoon', 'conservatory'];
+const ROOM_ORDER: RoomType[] = ['cellar', 'den', 'perch', 'workshop', 'parlor', 'playroom', 'amphitheater', 'lagoon', 'conservatory', 'banquet'];
 
 const ROLE_ICON: Record<Role, string> = { Sentry: '🔭', Forager: '🍓', Digger: '⛏️' };
 const PHASE_ICON = { Morning: '🌅', Afternoon: '☀️', Dusk: '🌇', Night: '🌙' };
 
 function activity(m: Meerkat): string {
+  if (m.pup && m.state === 'Walking' && m.intent === 'follow') return 'shadowing mentor';
   if (m.state === 'Walking') {
     switch (m.intent) {
       case 'gather': return 'heading out';
@@ -53,7 +56,8 @@ function activity(m: Meerkat): string {
     Idle: 'thinking', Waiting: 'pottering', Digging: 'digging', Building: 'building', Gathering: 'foraging',
     Unloading: 'unpacking', Posted: 'on watch', Sleeping: 'asleep', Napping: 'napping', Huddling: 'sunbathing',
     Fleeing: 'diving for cover!', Hiding: 'hiding', Rallying: 'rallying!', Mobbing: 'sand-kicking',
-    Startled: 'eek!', Dizzy: 'dizzy 💫', Held: 'wheee!',
+    Startled: 'eek!', Dizzy: 'dizzy 💫', Held: 'wheee!', Fainting: 'swooning 😱', Stretching: 'stretching 🌞',
+    Ouch: 'ouch ouch ouch!', Flipping: 'tail-dodging', Playing: 'playing', Following: 'following the Alpha', Led: 'Alpha (🎮)',
   };
   return map[m.state] ?? m.state;
 }
@@ -102,6 +106,9 @@ export class HudScene extends Phaser.Scene {
   private sniffShown = false;
   private modal: Phaser.GameObjects.Container | null = null;
   private modalRefresh: (() => void) | null = null;
+  private saveBtn!: Button;
+  private border!: Phaser.GameObjects.Graphics;
+  private inset = { top: 0, right: 0, bottom: 0, left: 0 };
 
   constructor() {
     super('Hud');
@@ -124,6 +131,8 @@ export class HudScene extends Phaser.Scene {
     ];
     this.speedBtns = speeds.map(([l, fn]) => new Button(this, l, 38, 30, fn, { fontSize: 14 }));
     this.trophyBtn = new Button(this, '🏆', 38, 30, () => this.openBurrow(), { fontSize: 15 });
+    this.saveBtn = new Button(this, '💾', 38, 30, () => this.openSave(), { fontSize: 15 });
+    this.border = this.add.graphics().setDepth(40);
     this.muteBtn = new Button(this, '🔊', 38, 30, () => {
       setMuted(!isMuted());
       this.muteBtn.setLabel(isMuted() ? '🔇' : '🔊');
@@ -184,7 +193,8 @@ export class HudScene extends Phaser.Scene {
 
     this.scale.on('resize', () => this.layout());
     this.layout();
-    this.toast('Welcome to Sunburst Hollow! 🌞 Dig a Root Cellar, a Snuggle Den and a Lookout Perch.', 'good');
+    if (this.registry.get('resumed')) this.toast(`🐾 Welcome back to Sunburst Hollow! Day ${this.world.clock.day}, right where you left off.`, 'good');
+    else this.toast('Welcome to Sunburst Hollow! 🌞 Dig a Root Cellar, a Snuggle Den and a Lookout Perch.', 'good');
   }
 
   private onTool(t: ToolDef): void {
@@ -206,7 +216,7 @@ export class HudScene extends Phaser.Scene {
     if (this.modal) return true;
     if (this.panels.some((r) => r.contains(x, y))) return true;
     const all = [
-      ...this.speedBtns, this.muteBtn, this.trophyBtn, ...this.toolBtns, this.alarmBtn, this.rosterToggle,
+      ...this.speedBtns, this.muteBtn, this.trophyBtn, this.saveBtn, ...this.toolBtns, this.alarmBtn, this.rosterToggle,
       ...this.rosterBtns, ...this.rosterFocus, ...this.buildBtns,
     ];
     if (all.some((b) => b.contains(x, y))) return true;
@@ -264,7 +274,36 @@ export class HudScene extends Phaser.Scene {
         });
         y += 44;
       }
-      if (def.miniGame) {
+      if (room.type === 'playroom') {
+        const pups = w.pups;
+        const lines = pups.length
+          ? pups.map((p) => `🍼 ${p.name}: ${Math.round(p.growth * 100)}% grown · ${w.meerkatById(p.mentorId) ? `shadowing ${w.meerkatById(p.mentorId)!.name}` : 'no mentor yet'}`)
+          : [`No pups yet. They arrive on mornings when morale is ${CFG.PUP.morale}+ (now ${Math.round(w.morale)}).`];
+        lines.push('Drag an adult onto a pup (or use the pup’s card) to make it a mentor. Mentored pups grow faster and may inherit the mentor’s trait.');
+        const t = this.add.text(0, y, lines.join('\n'), { fontFamily: FONT, fontSize: '12px', color: '#fff7e6', wordWrap: { width } }).setResolution(2);
+        c.add(t);
+        y += t.height + 10;
+      }
+      if (room.type === 'banquet') {
+        const ok = w.canPlay(room);
+        c.add(this.add.text(0, y, ok.ok ? `Host a formal feast (${FEAST_COST} 🍓) for:` : `Feast Frenzy: ${ok.reason}`, { fontFamily: FONT, fontSize: '12px', color: '#ffd36b' }).setResolution(2));
+        y += 20;
+        const bw = (width - 8) / 2;
+        w.neighbors.forEach((n, i) => {
+          const b = new Button(this, `${n.partner ? '🤝' : '🐾'} ${n.name}\n${'♥'.repeat(Math.max(1, Math.round(n.relation / 20)))}`, bw, 44, () => {
+            if (!w.startFeast(room, n.id)) {
+              this.toast(`Can't host a feast: ${w.canPlay(room).reason ?? 'not now'}`, 'warn');
+              return;
+            }
+            this.closeModal();
+            this.scene.launch('MiniGame', { roomId: room.id, packId: n.id });
+            this.scene.bringToTop('MiniGame');
+          }, { fontSize: 12, color: ok.ok ? 0x5d8a3a : 0x4a3a2e });
+          b.setPosition(i * (bw + 8) + bw / 2, y + 22);
+          c.add(b);
+        });
+        y += 54;
+      } else if (def.miniGame) {
         const ok = w.canPlay(room);
         const b = new Button(this, ok.ok ? `▶ Play ${MINIGAME_NAMES[def.miniGame]}` : `${MINIGAME_NAMES[def.miniGame]}: ${ok.reason}`, width, 40, () => {
           if (!w.canPlay(room).ok) return;
@@ -329,22 +368,54 @@ export class HudScene extends Phaser.Scene {
       for (const cat of sc.categories) lines.push(`${cat.icon} ${'★'.repeat(cat.stars)}${'☆'.repeat(5 - cat.stars)}  ${cat.name}: ${cat.notes.join(', ')}`);
       lines.push('');
       lines.push(`⭐ Prestige ${w.prestige}  (Amphitheater +2 a night, ribbons +3 to +8)`);
-      for (const t of ['lagoon', 'conservatory'] as RoomType[]) {
+      for (const t of WONDERS) {
         const d = ROOM_DEFS[t];
         lines.push(`${w.blueprintUnlocked(t) ? '📜' : '🔒'} ${d.icon} ${d.name}: ${w.blueprintUnlocked(t) ? 'unlocked' : `needs ${d.unlock} ⭐`}`);
       }
       lines.push('');
       const active = w.activeSynergies();
       for (const d of SYNERGIES) lines.push(`${active.some((a) => a.def.id === d.id) ? '✨' : '⬜'} ${d.name}: ${d.blurb}`);
-      lines.push('⬜ Inspired Youth: needs the Pups\' Playroom (coming later)');
       lines.push('');
       for (const n of w.neighbors) {
-        lines.push(`🐾 ${n.name}  ${'♥'.repeat(Math.max(1, Math.round(n.relation / 20)))}${n.last ? `  · last pageant ${n.last.total}★` : ''}`);
+        lines.push(`${n.partner ? '🤝' : '🐾'} ${n.name}  ${'♥'.repeat(Math.max(1, Math.round(n.relation / 20)))}${n.partner ? '  · trading partner' : ''}${n.last ? `  · last pageant ${n.last.total}★` : ''}`);
       }
+      if (w.trinkets) lines.push(`🐚 ${w.trinkets} shiny pebbles & shells on display`);
       const t = this.add.text(0, top - 6, lines.join('\n'), { fontFamily: FONT, fontSize: this.compact ? '11px' : '12px', color: '#fff7e6', wordWrap: { width }, lineSpacing: 2 }).setResolution(2);
       c.add(t);
       return top + t.height;
     }, 600);
+  }
+
+  openSave(): void {
+    let confirm = false;
+    this.openModal('💾 Your burrow', (c, width, top) => {
+      const at = savedAt();
+      const t = this.add
+        .text(0, top - 6, `Sunburst Hollow saves itself every ${CFG.AUTOSAVE} seconds and whenever you leave.\n${at ? `Last saved ${new Date(at).toLocaleTimeString()}.` : 'Not saved yet.'}`, {
+          fontFamily: FONT, fontSize: '13px', color: '#e8d6b8', wordWrap: { width },
+        })
+        .setResolution(2);
+      c.add(t);
+      const y = top + t.height + 8;
+      const bw = (width - 10) / 2;
+      const save = new Button(this, '💾 Save now', bw, 40, () => {
+        this.toast(this.gs.save() ? '💾 Burrow saved!' : 'Could not save (storage is blocked in this browser).', 'good');
+        this.modalRefresh?.();
+      }, { fontSize: 14, color: 0x5d8a3a });
+      save.setPosition(bw / 2, y + 20);
+      const fresh = new Button(this, confirm ? 'Tap again: erase & restart' : '🌱 Start a new burrow', bw, 40, () => {
+        if (!confirm) {
+          confirm = true;
+          this.modalRefresh?.();
+          return;
+        }
+        clearSave();
+        location.href = `${location.pathname}?new`;
+      }, { fontSize: 13, color: confirm ? 0xb8402e : 0x4a3626 });
+      fresh.setPosition(bw + 10 + bw / 2, y + 20);
+      c.add([save, fresh]);
+      return y + 48;
+    });
   }
 
   private closeModal(): void {
@@ -428,6 +499,8 @@ export class HudScene extends Phaser.Scene {
     const w = this.world;
     this.openModal(`${m.name}`, (c, width, top) => {
       const pal = PALETTES[m.palette].name;
+      const tr = TRAITS[m.trait];
+      const qu = QUIRKS[m.quirk];
       const st: string[] = [];
       if (w.isSweaty(m)) st.push('🥵 Sweaty');
       if (m.status.chilly) st.push('🥶 Chilly');
@@ -436,7 +509,7 @@ export class HudScene extends Phaser.Scene {
       if (m.status.groomed > 0) st.push('✨ Groomed');
       c.add(
         this.add
-          .text(0, top - 6, `${pal} coat · ${activity(m)} · stamina ${Math.round(m.stamina)}\n${st.length ? st.join('  ') : 'Feeling fine'}`, {
+          .text(0, top - 6, `${m.pup ? '🍼 Pup · ' : ''}${pal} coat · ${activity(m)} · stamina ${Math.round(m.stamina)}\n${st.length ? st.join('  ') : 'Feeling fine'}\n${tr.icon} ${tr.name}: ${tr.blurb}\n${qu.icon} ${qu.name}: ${qu.blurb}`, {
             fontFamily: FONT,
             fontSize: '12px',
             color: '#e8d6b8',
@@ -444,7 +517,36 @@ export class HudScene extends Phaser.Scene {
           })
           .setResolution(2),
       );
-      let y = top + 40;
+      let y = top + 78;
+      if (!m.pup) {
+        const rows = ROLES.map((r) => {
+          const st = w.stars(m, r);
+          const perks = MASTERY_PERKS[r].filter((_, i) => (r === 'Digger' ? [2, 4, 2] : r === 'Forager' ? [2, 3, 5] : [2, 4, 5])[i] <= st);
+          return `${ROLE_ICON[r]} ${'★'.repeat(st)}${'☆'.repeat(5 - st)} ${r}${perks.length ? `: ${perks.join(' · ')}` : ''}`;
+        });
+        const t = this.add.text(0, y - 2, `Role Mastery\n${rows.join('\n')}`, { fontFamily: FONT, fontSize: '11px', color: '#ffe9a8', wordWrap: { width }, lineSpacing: 1 }).setResolution(2);
+        c.add(t);
+        y += t.height + 18;
+      }
+      if (m.pup) {
+        const mentor = w.meerkatById(m.mentorId);
+        c.add(this.add.text(0, y, `Growing up: ${Math.round(m.growth * 100)}%${w.hasSynergy('youth') ? '  (✨ Inspired Youth: 2× mentorship)' : ''}`, { fontFamily: FONT, fontSize: '13px', color: '#ffd36b' }).setResolution(2));
+        y += 26;
+        const b = new Button(this, `Mentor: ${mentor ? `${mentor.name} (${TRAITS[mentor.trait].icon} ${TRAITS[mentor.trait].name})` : '— none —'}  ▸`, width, 36, () => {
+          const adults = w.adults;
+          const i = adults.findIndex((a) => a.id === m.mentorId);
+          w.setMentor(m, i + 1 < adults.length ? adults[i + 1] : null);
+          this.modalRefresh?.();
+        }, { fontSize: 13, align: 'left' });
+        b.setPosition(width / 2, y + 12);
+        const focus = new Button(this, '◎ Show me', 120, 32, () => {
+          this.gs.focusOn(m);
+          this.closeModal();
+        }, { fontSize: 13 });
+        focus.setPosition(60, y + 58);
+        c.add([b, focus]);
+        return y + 78;
+      }
       c.add(this.add.text(0, y, 'Job', { fontFamily: FONT, fontSize: '13px', color: '#ffd36b' }).setResolution(2));
       const bw = Math.min(120, (width - 60) / 3);
       ROLES.forEach((r, i) => {
@@ -488,19 +590,22 @@ export class HudScene extends Phaser.Scene {
     const W = this.scale.width;
     const H = this.scale.height;
     this.compact = W < 720 || H < 480;
+    // Keep clear of the notch / Dynamic Island and the home bar on iPhone.
+    const ins = (this.inset = safeInsets());
 
     this.topBar.clear();
     this.topBar.fillStyle(0x2b1d14, 0.88);
     this.topBar.fillRect(0, 0, W, TOP_H);
-    this.dayText.setFontSize(this.compact ? 12 : 15).setPosition(12, TOP_H / 2);
+    this.dayText.setFontSize(this.compact ? 12 : 15).setPosition(12 + ins.left, TOP_H / 2);
     this.statsText.setFontSize(this.compact ? 12 : 15);
-    let x = W - 8 - 19;
+    let x = W - 8 - 19 - ins.right;
     this.muteBtn.setPosition(x, TOP_H / 2);
     for (let i = this.speedBtns.length - 1; i >= 0; i--) {
       x -= 42;
       this.speedBtns[i].setPosition(x, TOP_H / 2);
     }
     this.trophyBtn.setPosition(x - 48, TOP_H / 2);
+    this.saveBtn.setPosition(x - 90, TOP_H / 2);
 
     // toolbar (Sniff only appears in the lean seasons)
     this.sniffShown = this.world.canSniff;
@@ -513,7 +618,7 @@ export class HudScene extends Phaser.Scene {
     const bh = this.compact ? 46 : 54;
     const total = n * bw + (n - 1) * gap + gap * 2 + alarmW;
     let bx = (W - total) / 2 + bw / 2;
-    const by = H - bh / 2 - 8;
+    const by = H - bh / 2 - 8 - Math.min(ins.bottom, 20);
     visible.forEach((b) => {
       b.resize(bw, bh).setFontSize(this.compact ? 11 : 13).setPosition(bx, by);
       bx += bw + gap;
@@ -526,7 +631,7 @@ export class HudScene extends Phaser.Scene {
     const rows = Math.ceil(nb / cols);
     const pbw = clamp((W - 24 - gap * (cols - 1)) / cols, 60, 104);
     const pbh = this.compact ? 42 : 46;
-    const pTop = H - bh - 16 - rows * (pbh + gap);
+    const pTop = H - bh - 16 - Math.min(ins.bottom, 20) - rows * (pbh + gap);
     this.buildBtns.forEach((b, i) => {
       const cx = (W - (cols * pbw + (cols - 1) * gap)) / 2 + pbw / 2 + (i % cols) * (pbw + gap);
       const cy = pTop + pbh / 2 + Math.floor(i / cols) * (pbh + gap);
@@ -553,12 +658,13 @@ export class HudScene extends Phaser.Scene {
       this.rosterFocus.push(new Button(this, '◎', 30, 34, () => this.gs.focusOn(this.world.meerkats[i]), { fontSize: 14 }));
     }
     const rowW = this.compact ? 156 : 186;
-    this.rosterToggle.setPosition(8 + 55, TOP_H + 18).setLabel(`🐾 Mob (${ms.length}) ${this.rosterOpen ? '▾' : '▸'}`);
+    const L = 8 + this.inset.left;
+    this.rosterToggle.setPosition(L + 55, TOP_H + 18).setLabel(`🐾 Mob (${ms.length}) ${this.rosterOpen ? '▾' : '▸'}`);
     const rowH = this.compact ? 32 : 36;
     this.rosterBtns.forEach((b, i) => {
       const y = TOP_H + 48 + i * (rowH + 4);
-      b.resize(rowW, rowH).setPosition(8 + 34 + rowW / 2, y).setVisible(this.rosterOpen);
-      this.rosterFocus[i].resize(30, rowH).setPosition(8 + 15, y).setVisible(this.rosterOpen);
+      b.resize(rowW, rowH).setPosition(L + 34 + rowW / 2, y).setVisible(this.rosterOpen);
+      this.rosterFocus[i].resize(30, rowH).setPosition(L + 15, y).setVisible(this.rosterOpen);
     });
   }
 
@@ -581,7 +687,7 @@ export class HudScene extends Phaser.Scene {
     );
     this.statsText.setText(`🍓 ${w.food}/${w.foodCap}  🌾 ${w.materials.grass}  💎 ${w.materials.gems}  ⭐ ${w.prestige}  😊 ${Math.round(w.morale)}`);
     const statsX = this.dayText.x + this.dayText.width + (this.compact ? 10 : 22);
-    const room = this.trophyBtn.x - 24 - statsX;
+    const room = this.saveBtn.x - 24 - statsX;
     this.statsText.setPosition(statsX, TOP_H / 2).setVisible(room > this.statsText.width * 0.9);
 
     const sp = this.gs.paused && !this.scene.isActive('MiniGame') ? 0 : this.gs.speed;
@@ -604,7 +710,7 @@ export class HudScene extends Phaser.Scene {
       this.buildBtns.forEach((b, i) => {
         const t = ROOM_ORDER[i];
         const d = ROOM_DEFS[t];
-        const short = d.name.replace(/^(Tinkering|Lookout|Snuggle|Storytelling|Aquifer|Crystal) /, '');
+        const short = d.name.replace(/^(Tinkering|Lookout|Snuggle|Storytelling|Aquifer|Crystal|Pups'|Grand) /, '');
         const cost = w.blueprintUnlocked(t)
           ? [d.cost ? `${d.cost}🍓` : '', d.gems ? `${d.gems}💎` : ''].filter(Boolean).join(' ') || 'free'
           : `🔒 ${d.unlock}⭐`;
@@ -623,7 +729,8 @@ export class HudScene extends Phaser.Scene {
     if (this.rosterBtns.length !== w.meerkats.length) this.layoutRoster();
     w.meerkats.forEach((m, i) => {
       const gear = [m.gear.head, m.gear.eyes, m.gear.back].filter(Boolean).map((k) => GEAR[k!].icon).join('');
-      this.rosterBtns[i].setLabel(`${m.name}  ${ROLE_ICON[m.role]} ${m.role} ${gear}\n${activity(m)} ${statusIcons(w, m)}`);
+      const job = m.pup ? `🍼 Pup ${Math.round(m.growth * 100)}%` : `${ROLE_ICON[m.role]} ${m.role} ${w.stars(m)}★`;
+      this.rosterBtns[i].setLabel(`${m.id === w.alphaId ? '🎮' : ''}${m.name}  ${job} ${gear}\n${activity(m)} ${statusIcons(w, m)}`);
     });
 
     // goals: show what's next
@@ -648,6 +755,14 @@ export class HudScene extends Phaser.Scene {
       [has('lagoon') || has('conservatory'), 'Build a Tier 3 wonder room'],
       [w.stats.bestRibbon !== 'none', 'Win a pageant ribbon'],
       [w.stats.bestRibbon === 'gold', 'Win the Gold Sunburst Trophy'],
+      [has('playroom'), "Build a Pups' Playroom"],
+      [w.pups.some((p) => p.mentorId != null) || w.stats.pups > 0, 'Give a pup a mentor (drag an adult onto it)'],
+      [w.stats.pups > 0, 'Raise a pup to adulthood'],
+      [w.stats.decoys > 0, 'Toss a decoy gourd at a jackal'],
+      [w.stats.flips > 0, 'Tail-Dodge & Flip a scorpion'],
+      [w.stats.honey > 0, 'Distract a honey badger with honeycomb'],
+      [has('banquet'), 'Build the Grand Banquet Hall'],
+      [w.neighbors.some((n) => n.partner), 'Win over a permanent trading partner at a feast'],
     ];
     const done = goals.filter((g) => g[0]).length;
     const todo = goals.filter((g) => !g[0]).slice(0, this.compact ? 4 : 6);
@@ -680,6 +795,14 @@ export class HudScene extends Phaser.Scene {
     const threats: { x: number; y: number; icon: string }[] = [];
     for (const e of w.eagles) if (e.alerted || e.selfNoticed) threats.push({ x: eagleGroundX(e) * S, y: (SY - 1) * S, icon: '🦅' });
     for (const c of w.cobras) if (c.state === 'ambush' || c.state === 'mob') threats.push({ x: (c.x + 0.5) * S, y: (SY - 1) * S, icon: '🐍' });
+    for (const j of w.jackals) if (j.alerted || j.state === 'chase' || j.state === 'barking') threats.push({ x: j.x * S, y: (SY - 1) * S, icon: '🐺' });
+    for (const b of w.badgers) if ((b.alerted || b.noticed) && b.state !== 'leaving') threats.push({ x: b.x * S, y: (SY - 1) * S, icon: '🦡' });
+    // Deep Double-Bark: a yellow screen border while a spotted jackal prowls (spec 6).
+    this.border.clear();
+    if (w.jackals.some((j) => j.alerted && (j.state === 'patrol' || j.state === 'chase'))) {
+      this.border.lineStyle(6, 0xffd23f, 0.5 + 0.35 * Math.sin(time * 0.008));
+      this.border.strokeRect(3, 3, W - 6, H - 6);
+    }
     this.edge.clear();
     this.edgeIcons.forEach((t) => t.setVisible(false));
     const top = TOP_H + 24;

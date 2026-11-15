@@ -25,7 +25,7 @@ export function eagleGroundX(e: Eagle): number {
 }
 
 export function spawnEagle(w: World): Eagle | null {
-  const candidates = w.meerkats.filter((m) => w.onSurface(m) && m.state !== 'Posted' && m.state !== 'Held');
+  const candidates = w.meerkats.filter((m) => w.onSurface(m) && !m.pup && m.state !== 'Posted' && m.state !== 'Held');
   if (!candidates.length) return null;
   const target = w.rng.pick(candidates);
   const fromLeft = w.rng.chance(0.5);
@@ -64,11 +64,11 @@ export function updateEagle(w: World, e: Eagle, dt: number): void {
         e.shadowX += clamp(target.x - e.shadowX, -E.track * dt, E.track * dt);
       }
       e.x = e.shadowX;
-      if (!e.alerted && !e.selfNoticed && e.t / E.shadow >= E.selfNotice) {
+      if (!e.alerted && !e.selfNoticed && e.t / w.eagleShadowTime() >= E.selfNotice) {
         e.selfNoticed = true;
         w.bus.publish({ type: 'eagle', x: e.shadowX, y: SY - 0.5, radius: E.noticeRadius, relay: false, predatorId: e.id });
       }
-      if (e.t >= E.shadow) {
+      if (e.t >= w.eagleShadowTime()) {
         e.state = 'swoop';
         e.t = 0;
       }
@@ -99,7 +99,7 @@ export function updateEagle(w: World, e: Eagle, dt: number): void {
 function resolveSwoop(w: World, e: Eagle): void {
   const E = CFG.EAGLE;
   const caught = w.meerkats.filter(
-    (m) => w.onSurface(m) && m.state !== 'Held' && m.state !== 'Posted' && Math.abs(m.x - e.shadowX) <= E.catchRadius,
+    (m) => w.onSurface(m) && !m.pup && m.state !== 'Held' && m.state !== 'Posted' && Math.abs(m.x - e.shadowX) <= E.catchRadius,
   );
   if (!caught.length) {
     w.stats.eaglesEvaded++;

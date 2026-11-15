@@ -57,4 +57,17 @@ export class JobQueue {
   get size(): number {
     return this.all.size;
   }
+
+  snapshot(): { nextId: number; jobs: Job[] } {
+    return { nextId: this.nextId, jobs: [...this.all.values()].map((j) => ({ ...j })) };
+  }
+  restore(s: { nextId: number; jobs: Job[] }): void {
+    this.all.clear();
+    this.byCell.clear();
+    for (const j of s.jobs) {
+      this.all.set(j.id, { ...j });
+      this.byCell.set(j.cell, j.id);
+    }
+    this.nextId = s.nextId;
+  }
 }
