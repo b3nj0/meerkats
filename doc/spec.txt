@@ -1,0 +1,271 @@
+# Game Design & Technical Specification: *Sunburst Hollow* (Working Title)
+
+## 1. Executive Summary
+
+* **Genre:** Cozy Colony-Sim, Underground Base-Builder, & Non-Violent Survival Strategy
+* **Perspective & Camera:** 2.5D Ant-Farm Cutaway View (simultaneous visibility of the desert surface and multi-layered subterranean burrow)
+* **Target Audience:** Ages 6+ and cozy/strategy fans (players of *Fallout Shelter*, *Animal Crossing*, *Oxygen Not Included*, and *Pikmin*)
+* **Core Pillars:**
+1. **Zero Violence / Slapstick Tension:** No combat, gore, or character death. Predator encounters rely on early warning systems, synchronized teamwork, and comedic physical setbacks (dropped loot, dizzy stars, startled sprints).
+2. **Living Cutaway Architecture:** A tactile, customizable underground palace where every room provides mechanical buffs, spatial synergies, and an interactive 15-second mini-game.
+3. **Push-Your-Luck Foraging & Seasonal Rhythm:** Managing scarce desert resources across distinct wet and dry seasons while competing in friendly **Burrow Pageants** against neighboring packs.
+
+
+
+---
+
+## 2. Controls & User Interaction
+
+### 2.1 Camera & Viewport
+
+* **Panning & Zooming:** Smooth vertical and horizontal panning between the sun-baked Kalahari surface and deep subterranean strata. Zoom levels range from **Macro Colony View** (managing surface expeditions and burrow layout) to **Room Focus View** (watching animations and triggering mini-games).
+* **Split-Awareness Cue:** When zoomed underground, a subtle edge-of-screen directional indicator pulses when a surface Sentry spots danger.
+
+### 2.2 Input Schemes
+
+* **Mouse / Touch (Desktop & Tablet):**
+* **Click & Drag Digging:** Paint grid tiles in the dirt; assigned Diggers pathfind to carve and reinforce the caverns.
+* **Drag & Drop Assignment:** Pick up any meerkat (plays a cheerful dangle animation) and drop them onto a room, lookout perch, or pup to assign their role or mentorship.
+* **Global Alarm Trigger:** Prominent HUD horn/whistle button (or `Spacebar` hotkey) to sound colony-wide evacuation or rally commands.
+
+
+* **Gamepad / Controller (Console):**
+* **Direct Leader Control:** Control the active "Alpha" scout directly with the left analog stick.
+* **Squad Whistle:** Tap a face button to call nearby foragers into a follow-line; press shoulder buttons to trigger scatter/hide or sand-kick rally behaviors.
+
+
+
+---
+
+## 3. Core Gameplay Loop (Day/Night Cycle)
+
+Each in-game day runs on a continuous cycle divided into four functional phases:
+
+1. **Morning (Scouting & Prep):**
+* Review weather forecast, pantry stock, and colony morale.
+* Assign or adjust meerkat roles (Sentry, Forager, Digger, Caretaker, Ambassador).
+* Cold-weather mornings trigger a **Sunbeam Huddle** behavior where meerkats warm up outside the entrance before sprinting out.
+
+
+2. **Afternoon (The Surface Run):**
+* Foragers explore surface zones to gather berries, dig up roots, harvest tsamma melons, and uncover buried gems/blueprints.
+* Sentries scan the horizon, sounding distinct alarms to evade predators.
+* Scout Ambassadors visit neighboring burrow borders to trade goods.
+
+
+3. **Dusk (Retreat & Burrow Expansion):**
+* As the sun sets, foragers haul full backpacks underground to unload at the **Root Cellar**.
+* Players spend gathered resources to excavate new rooms, craft accessories, decorate interiors, and play room mini-games for bonus yields.
+
+
+4. **Night (Rest & Colony Progression):**
+* Burrow entrances seal for the night.
+* Meerkats sleep in **Snuggle Dens** (restoring stamina), attend **Storytelling Amphitheater** sessions (generating Prestige), and pups earn mentorship XP.
+
+
+
+---
+
+## 4. Seasonal Calendar & Environmental Systems
+
+One in-game year consists of **40 days**, divided into **four 10-day seasons**. At the end of Day 10 of every season, a **Burrow Pageant** takes place.
+
+| Season | Days | Soil State | Resource Availability | Signature Weather Event | Core Strategic Focus |
+| --- | --- | --- | --- | --- | --- |
+| **Emerald Rains (Spring)** | 1–10 | Soft (+25% dig speed) | Abundant surface berries & insects | **Flash Downpours:** Floods low surface dips; leaf funnels fill water stores to 100%. | Rapid burrow expansion & pantry stockpiling. |
+| **Golden Sun (Summer)** | 11–20 | Normal | Tsamma melons & buried roots | **Scorching Heatwaves (12 PM–3 PM):** Applies *Sweaty* speed debuff unless cooled in the Aquifer Lagoon or wearing Sun Hats. | Hydration buffs, shade stops, & root sniffing. |
+| **Dust Winds (Autumn)** | 21–30 | Normal | Scarce food; high gems, fossils, & blueprints | **Red Haboob (Sandstorm):** Drops visibility near zero; shrinks Sentry radar unless wearing Amber Goggles; relies on audio cues. | Artifact hunting, crafting, & room decorating. |
+| **The Long Dry (Winter)** | 31–40 | Hard (-30% dig speed) | **Drought Scarcity:** Surface food vanishes | **Chilly Desert Frost:** Dawn cold slows movement until meerkats huddle in morning sunbeams. | Ration management, greenhouse crops, & neighbor trade. |
+
+### 4.1 Scarcity & "Sniff & Dig" Mechanic
+
+* When surface food is depleted during **Golden Sun** or **The Long Dry**, players activate **Sniff Mode**.
+* Foragers emit expanding scent rings across the desert floor; pulsating visual/audio cues reveal hidden underground grubs, moisture-rich roots, and subterranean water pockets.
+* Distant resource nodes require players to construct **Bolt-Holes** (1-tile emergency escape shafts) along the route to survive predator patrols.
+
+---
+
+## 5. Subterranean Burrow Architecture & Rooms
+
+Rooms are carved out of distinct underground soil strata and categorized into **three progression tiers**. Every room supports customizable visual themes (*Sunlit Sandstone*, *Crystal Cavern*, *Rootwood Manor*) and houses an optional **15-second interactive mini-game** that grants a "Perfect!" resource or buff multiplier.
+
+### 5.1 Tier 1: Early-Game Essentials
+
+1. **Lookout Perch (Surface Cap):**
+* *Visuals:* Reinforced red-clay mound topped with a weathered acacia branch, stacked flat stones, and a hollowed-out gourd megaphone.
+* *Buff:* Expands Sentry horizon radar by +30%.
+* *Mini-Game (**Horizon Spotter**):* Pan beetle-shell binoculars across shimmering heat haze to tag hidden berry patches, buried loot, and incoming shadows before time expires.
+
+
+2. **Root Cellar & Pantry:**
+* *Visuals:* Cool earthen shelves lined with woven grass baskets, hanging dried beetles, and carved alcoves for tsamma melons.
+* *Buff:* Increases food storage cap and slows spoilage during heatwaves.
+* *Mini-Game (**Trail-Mix Sort**):* Sort falling beetles, roots, and berries into matching baskets while flicking away harmless dung beetles trying to nibble the stock.
+
+
+3. **Snuggle Den (Sleeping Quarters):**
+* *Visuals:* Sunken dirt alcoves padded with fluff-grass, shed bird feathers, and glowing amber pebbles.
+* *Buff:* Restores overnight stamina; decorated dens grant the **Well-Rested** (+15% movement speed) buff.
+* *Mini-Game (**Lullaby Hum**):* Match gentle rhythmic chirps and purrs to settle restless meerkats into a sleeping pile.
+
+
+
+### 5.2 Tier 2: Mid-Game Community
+
+4. **Pups' Playroom (Nursery):**
+* *Visuals:* Sandstone cavern painted with berry-juice pawprints, hollow log slides, pebble pits, and woven vine swings.
+* *Buff:* Accelerates pup maturation and unlocks trait inheritance via mentorship.
+* *Mini-Game (**Tumble-Tag**):* "Simon Says" reflex sequence mimicking an elder meerkat's hops, tail-wags, and sand-kicks.
+
+
+5. **Sun-Parlor & Grooming Salon:**
+* *Visuals:* Built beneath a natural surface skylight crack with warm sunbeams, flat basking stones, and bristle-brush stations.
+* *Buff:* Cleanses *Dusty* and *Burr-Tangled* debuffs from surface runners and raises colony happiness.
+* *Mini-Game (**Burr & Beetle Brush**):* Brush sand off a meerkat's coat and pop sticky burrs off their tail to fill their purr meter.
+
+
+6. **Tinkering Workshop:**
+* *Visuals:* Stone workbenches cluttered with tortoise-shell helmets, leaf backpacks, twine spools, and acorn-cap goggles.
+* *Buff:* Enables crafting of wearable accessories, larger foraging backpacks, and reinforced bolt-holes.
+* *Mini-Game (**Weaver's Knot**):* Connect matching colored grass fibers across a loom grid without crossing lines.
+
+
+7. **Storytelling Amphitheater:**
+* *Visuals:* Tiered circular cavern lit by firefly lanterns, a raised rock stage, and naturally shed snakeskin tapestries.
+* *Buff:* Generates **Colony Prestige** each evening, unlocking rare blueprints and attracting wandering visitors.
+* *Mini-Game (**Shadow Puppets**):* Shape paws in front of a firefly lantern to match silhouette prompts (eagle, scorpion, melon) during the elder's tale.
+
+
+
+### 5.3 Tier 3: Late-Game Grand Luxury
+
+8. **Subterranean Aquifer Lagoon (Swimming Pool):**
+* *Visuals:* Underground spring grotto lined with turquoise mineral stones, glowing cave moss, lily pads, and hollow-reed pool noodles. Meerkats wear hollowed-out gourd floaties and acorn goggles.
+* *Buff:* Grants **Oasis Refreshed** (complete immunity to summer heatwave slowdowns), cleanses dust, and awards high **Burrow Pageant** prestige.
+* *Mini-Game (**Acorn Water Polo**):* 2v2 physics-based splash match bouncing a buoyant desert berry across a vine net.
+
+
+9. **Crystal Conservatory (Underground Greenhouse):**
+* *Visuals:* Vaulted cavern where translucent selenite crystals refract sunlight onto terraced planters of glowing mushrooms, succulents, and truffles.
+* *Buff:* Produces reliable food and medicinal herbs year-round, bypassing winter drought scarcity.
+* *Mini-Game (**Prism Alignment**):* Rotate crystal mirrors to direct sunbeams onto dormant blooms until they fruit.
+
+
+10. **Grand Banquet Hall:**
+* *Visuals:* Palatial sandstone dining hall with a carved-root banquet table, leaf plates, and berry-juice chandeliers.
+* *Buff:* Enables formal feasts for rival packs, converting friendly rivals into permanent trading partners.
+* *Mini-Game (**Feast Frenzy**):* Slide gourmet insect-and-melon platters down the banquet table to VIP guests before their patience dips.
+
+
+
+### 5.4 Spatial Synergy Matrix
+
+Adjacent room placement triggers automatic passive bonuses:
+
+* **Root Cellar + Main Burrow Entrance:** *Quick Drop-Off* (+40% faster backpack unloading).
+* **Pups' Playroom + Storytelling Amphitheater:** *Inspired Youth* (2x mentorship XP for pups).
+* **Aquifer Lagoon + Sun-Parlor Salon:** *Resort Spa* (grants a 24-hour *Peak Morale* aura to visiting meerkats).
+* **Tinkering Workshop + Crystal Conservatory:** *Artisan Glow* (unlocks bioluminescent lanterns and crystal-tipped digging tools).
+
+---
+
+## 6. Non-Violent Predator Roster & Alarm System
+
+Predators patrol the surface based on time of day and season. Sentries fill a **Warning Meter** upon spotting a threat and broadcast a specific audio-visual call across the relay chain.
+
+| Predator | Behavior & Threat | Sentry Alarm Call | Non-Violent Counter-Play | Non-Violent Fail Consequence |
+| --- | --- | --- | --- | --- |
+| **Martial Eagle / Goshawk** | Circles high above, casting a growing shadow before swooping in a line. | **Sky-Whistle:** High-pitched *peep-peep!* + upward paw icon. | Sprint into nearest bolt-hole (3–4s window) or freeze under thorny acacia bushes. | Snatches meerkat's backpack (spilling berries) + 5s dizzy stars animation. |
+| **Cape Cobra / Puff Adder** | Ambushes from tall grass near rich root patches. | **Recruitment Chirp:** Rhythmic *chuk-chuk-chuk!* summoning nearby allies. | **Rally (3+ Meerkats):** Form a puffed-tail wall and kick waves of sand until the snake sneezes and slithers off. | Startles solo meerkat into a cartoon leap and involuntary sprint back to main burrow. |
+| **Black-Backed Jackal** | Patrols fixed paths between dunes, chasing distant foragers. | **Deep Double-Bark:** Low *woof-woof!* + yellow screen border. | Pop between linked bolt-holes to confuse AI, or toss a decoy stink-beetle/gourd. | Chases meerkat into hole and barks outside, blocking that entrance for 20 seconds. |
+| **Thick-Tailed Scorpion** | Stationary guard over buried grubs and gems under flat rocks. | **Claw-Snap Click:** Local rattle triggered when sniffing nearby. | **Tail-Dodge & Flip:** Bait claw snap with a decoy stick while a partner scoops treasure and flips a coconut shell over it. | Pinches tip of meerkat's tail, triggering a 4s comical hopping "ouch!" dance. |
+| **Honey Badger** | Heavy tank wandering onto map in late game; can collapse shallow holes. | **Sustained Siren Hum:** Continuous long note clearing the ground. | Climb tall acacia trees/rock spires; knock down a wild honeycomb to distract it. | Bulldozes a shallow bolt-hole (requires 10s of Digger repair) and waddles off. |
+
+---
+
+## 7. Meerkat Simulation: Roles, Traits, & Customization
+
+### 7.1 Colony Roles & Mastery
+
+Meerkats gain **Role Mastery (1–5 Stars)** as they perform tasks, unlocking passive perks:
+
+* **Sentry:** Scans horizon, sounds alarms, relays barks. *Mastery:* +radar range, highlights buried loot, slows eagle swoop timers by 1.5s.
+* **Forager:** Gathers surface food, digs roots, hauls melons. *Mastery:* Larger carry capacity, faster dune sprinting, solo scorpion *Tail-Dodge*.
+* **Digger & Architect:** Carves rooms, reinforces walls, repairs bolt-holes, places decor. *Mastery:* +50% digging speed in hard winter soil, bonus gem drops while digging.
+* **Caretaker & Chef:** Cooks snacks, grooms fur, tends greenhouse crops, supervises pups. *Mastery:* Longer meal buffs, 2x grooming morale, faster pup XP.
+* **Scout Ambassador (Mid-Game):** Visits neighbor burrows, negotiates trades, leads *Sand-Kick Mobs*. *Mastery:* Bonus Pageant prestige stars, higher chance to recruit wandering meerkats.
+
+### 7.2 Personality Traits & Quirks
+
+Each meerkat generates with **1 Skill Trait** and **1 Comedy Quirk**:
+
+* **Skill Traits:**
+* *Eagle-Eyed:* +25% Sentry radar radius; spots hidden snakes at 2x range.
+* *Tunnel Rat:* +30% underground movement speed; immune to sandstorm disorientation.
+* *Green Paw:* +20% crop growth speed in the Crystal Conservatory.
+* *Sand-Kicker:* Counts as 2 meerkats in a defensive *Sand-Kick Mob*.
+* *Iron Stomach:* Eats bitter drought roots without morale loss.
+
+
+* **Comedy Quirks:**
+* *Dramatic Faint:* Pauses 0.5s in theatrical shock when an alarm sounds before running (nearby pups gain +5 Morale).
+* *Gourd Collector:* Brings back shiny pebbles/shells alongside food, passively boosting Burrow Pageant decor points.
+* *Sunbather:* Stretches on a warm rock for 10s each morning, gaining +15% work speed for the afternoon.
+* *Chatterbox:* Squeaks continuously while working, boosting room morale for coworkers.
+* *Clumsy Hopper:* Trips once per day, scattering berries that nearby pups chase for bonus play XP.
+
+
+
+### 7.3 Visual Customization & Craftable Gear
+
+* **Genetics:** 5 Coat Palettes (*Sandy Gold, Terracotta Red, Silver-Grey, Toasted Cinnamon, Cream Puff*), stripe/spot patterns, tail-tip colors, and facial markings.
+* **Craftable Accessories (Tinkering Workshop):**
+* *Headwear:* Woven Grass Sun Hat (prevents heatwave debuff), Acorn-Cap Helmet (faster digging), Wildflower Crown (+Pageant Spirit).
+* *Backpacks:* Leaf Satchel (4 slots), Hollowed Gourd Pack (6 slots), Crystal-Trimmed Pouch (8 slots).
+* *Eyewear:* Amber-Lens Goggles (clears sandstorm vision), Carved Wood Monocle (+Scout diplomacy).
+* *Pool Gear:* Hollow-Gourd Inner Tube & Melon-Slice Eye Mask (auto-equipped in Aquifer Lagoon).
+
+
+
+### 7.4 Pups & Mentorship
+
+* High colony morale spawns **Pups** in the **Pups' Playroom**.
+* Pups follow adult workers mimicking animations (generating passive **Colony Joy**) and can be assigned to shadow a 5-star adult mentor for 5 days to inherit their **Skill Trait** upon maturing.
+
+---
+
+## 8. Neighboring Packs & Burrow Pageants
+
+Neighboring meerkat mobs inhabit adjacent territories on the world map. They never attack; instead, they serve as trading partners and friendly rivals.
+
+### 8.1 Burrow Pageant Judging (End of Every 10-Day Season)
+
+Three visiting Elders tour the player's burrow and award **1–5 Stars** across four categories:
+
+1. **Architectural Grandeur:** Room variety, excavation depth, and active **Spatial Synergies**.
+2. **Cozy Aesthetics:** Cohesive room themes, crafted furniture, lanterns, and clean tunnels.
+3. **Hospitality & Feast:** Pantry food diversity and Elder performance/enjoyment in one played burrow mini-game.
+4. **Colony Spirit:** Average meerkat happiness, clean/groomed fur, well-rested pups, and equipped accessories.
+
+### 8.2 Pageant Tiers & Rewards
+
+* **Bronze Ribbon (8–11 Stars):** New wall/floor texture + rare surface seeds.
+* **Silver Ribbon (12–16 Stars):** Unique decorative statue (e.g., sandstone fountain) + improved trade exchange rates.
+* **Gold Sunburst Trophy (17–20 Stars):** Unlocks a **Tier 3 Wonder Blueprint** and recruits a wandering specialist meerkat with rare traits.
+
+---
+
+## 9. Recommended Technical Architecture & MVP Roadmap
+
+### 9.1 Core Data Models (Implementation Guide)
+
+* `GridSystem`: 2D tilemap split into `SurfaceLayer` (patrol paths, resource nodes, bolt-hole exits) and `SubterraneanGrid` (excavatable soil hardness types, room bounding boxes, adjacency graph for synergy calculation).
+* `MeerkatAgent`: Finite State Machine (`Idle`, `Foraging`, `Fleeing`, `Mobbing`, `Working`, `Sleeping`, `PlayingMiniGame`) driven by utility scores (Hunger, Stamina, Morale, Heat/Cold) and modified by `Role`, `SkillTrait`, `Quirk`, and `EquippedGear`.
+* `AlarmEventBus`: Pub/sub event dispatcher propagating `PredatorAlert(Type, OriginPosition, Radius)` through active Sentries and nearby meerkats with a configurable relay delay.
+
+### 9.2 Phased MVP Milestones
+
+* **Milestone 1 (Core Sandbox):** 2.5D cutaway grid, tile digging, basic pathfinding, 3 meerkats, and 3 Tier 1 rooms (*Lookout Perch, Root Cellar, Snuggle Den*).
+* **Milestone 2 (Surface Tension):** Day/night cycle, foraging backpacks, *Martial Eagle* + *Cape Cobra* AI, Sentry radar, and *Bolt-Hole Dive* + *Sand-Kick Mob* mechanics.
+* **Milestone 3 (Mini-Games & Progression):** Implement 3 core 15-second mini-games (*Horizon Spotter, Trail-Mix Sort, Burr Brush*), accessory crafting, and the 4-season weather loop.
+* **Milestone 4 (Grand Burrow & Pageants):** Add Tier 2/3 luxury rooms (*Aquifer Lagoon, Crystal Conservatory*), spatial synergies, neighbor pack AI visitors, and the seasonal **Burrow Pageant** scoring system.
