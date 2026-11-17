@@ -1576,7 +1576,8 @@ export class World {
     return { ok: true };
   }
 
-  craft(kind: GearKind): boolean {
+  /** Craft gear; with a wearer, they put it on straight away. */
+  craft(kind: GearKind, wearer?: Meerkat): boolean {
     const c = this.canCraft(kind);
     const g = GEAR[kind];
     if (!c.ok) {
@@ -1589,7 +1590,8 @@ export class World {
     this.gearStock[kind]++;
     this.stats.crafted++;
     this.sfx('build');
-    this.toast(`${g.icon} Crafted a ${g.name}! Tap a meerkat in the roster to put it on.`, 'good');
+    if (wearer && this.equip(wearer, g.slot, kind)) this.toast(`${g.icon} Crafted a ${g.name}, and ${wearer.name} put it on! (${g.blurb})`, 'good');
+    else this.toast(`${g.icon} Crafted a ${g.name}! Tap a meerkat in the roster to put it on.`, 'good');
     return true;
   }
 

@@ -218,3 +218,18 @@ describe('Saves', () => {
     expect(v.grid.revealed[v.grid.idx(EX, SY + 6)]).toBe(1);
   });
 });
+
+describe('Gear', () => {
+  it('crafting for a meerkat puts it straight on, returning what they wore', () => {
+    const w = new World({ seed: 3, autoPredators: false });
+    buildNow(w, 'workshop', EX + 6, SY + 5);
+    w.materials = { grass: 10, gems: 10 };
+    const m = w.meerkats[0];
+    w.gearStock.sunhat = 1;
+    w.equip(m, 'head', 'sunhat');
+    expect(w.craft('helmet', m)).toBe(true);
+    expect(m.gear.head).toBe('helmet');
+    expect(w.gearStock.sunhat).toBe(1);
+    expect(w.gearStock.helmet).toBe(0);
+  });
+});

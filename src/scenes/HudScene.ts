@@ -634,19 +634,56 @@ export class HudScene extends Phaser.Scene {
         c.add(b);
       });
       y += 48;
+      // Gear: every item that fits each slot. Spare ones are one tap to wear; the rest
+      // show what they cost and open the crafting bench.
+      const shop = w.builtRooms('workshop').length > 0;
+      const anySpare = GEAR_KINDS.some((k) => w.gearStock[k] > 0);
+      const gearHint = !shop
+        ? '🔒 Gear is crafted in a 🧵 Tinkering Workshop. Build one from 🏠 Build, gather 🌾 grass and dig up 💎 gems, then craft here.'
+        : anySpare
+          ? 'Tap a green item to put it on. Tap a 🔨 item to craft it and put it on.'
+          : 'Tap a 🔨 item to craft it at the Workshop and put it on.';
+      c.add(this.add.text(0, y, `Gear  ·  🌾 ${w.materials.grass}  💎 ${w.materials.gems}`, { fontFamily: FONT, fontSize: '13px', color: '#ffd36b' }).setResolution(2));
+      const hintT = this.add.text(0, y + 18, gearHint, { fontFamily: FONT, fontSize: '11px', color: shop ? '#c8b89a' : '#ffb38a', wordWrap: { width } }).setResolution(2);
+      c.add(hintT);
+      y += 26 + hintT.height;
       for (const slot of SLOTS) {
-        c.add(this.add.text(0, y, SLOT_LABEL[slot], { fontFamily: FONT, fontSize: '13px', color: '#ffd36b' }).setResolution(2));
+        c.add(this.add.text(0, y + 2, SLOT_LABEL[slot], { fontFamily: FONT, fontSize: '13px', color: '#ffd36b' }).setResolution(2));
+        const kinds = GEAR_KINDS.filter((k) => GEAR[k].slot === slot);
+        const cw = (width - 60 - 6 * (kinds.length - 1)) / kinds.length;
+        kinds.forEach((k, i) => {
+          const g = GEAR[k];
+          const worn = m.gear[slot] === k;
+          const spare = w.gearStock[k];
+          const affordable = w.materials.grass >= g.grass && w.materials.gems >= g.gems;
+          const label = worn
+            ? `${g.icon} ${g.short}\n✓ wearing`
+            : spare > 0
+              ? `${g.icon} ${g.short}\n${spare} spare`
+              : `${shop ? '🔨' : '🔒'} ${g.icon} ${g.short}\n${g.grass}🌾 ${g.gems}💎`;
+          const color = worn ? undefined : spare > 0 ? 0x5d8a3a : shop && affordable ? 0x4a3626 : 0x352820;
+          const b = new Button(this, label, cw, 40, () => {
+            if (worn) w.equip(m, slot, null);
+            else if (spare > 0) w.equip(m, slot, k);
+            else if (!shop) {
+              this.toast(`🔒 ${g.icon} ${g.name} (${g.blurb}) needs a 🧵 Tinkering Workshop. Build one from 🏠 Build.`, 'warn');
+              return;
+            } else if (!affordable) {
+              this.toast(`${g.icon} ${g.name} needs ${g.grass} 🌾 and ${g.gems} 💎 (you have ${w.materials.grass} 🌾, ${w.materials.gems} 💎). Foragers gather grass; Diggers find gems.`, 'warn');
+              return;
+            } else w.craft(k, m);
+            playSfx('pop');
+            this.modalRefresh?.();
+          }, { fontSize: 11, ...(color !== undefined ? { color } : {}) });
+          b.setSelected(worn).setPosition(60 + i * (cw + 6) + cw / 2, y + 18);
+          c.add(b);
+        });
+        y += 46;
         const cur = m.gear[slot];
-        const spare = GEAR_KINDS.filter((k) => GEAR[k].slot === slot).reduce((n, k) => n + w.gearStock[k], 0);
-        const label = cur ? `${GEAR[cur].icon} ${GEAR[cur].name}  ▸` : `— nothing —  ▸${spare ? `  (${spare} spare)` : ''}`;
-        const b = new Button(this, label, width - 60, 34, () => {
-          w.cycleGear(m, slot);
-          playSfx('pop');
-          this.modalRefresh?.();
-        }, { fontSize: 13, align: 'left' });
-        b.setPosition(60 + (width - 60) / 2, y + 9);
-        c.add(b);
-        y += 42;
+        if (cur) {
+          c.add(this.add.text(60, y - 4, `${GEAR[cur].icon} ${GEAR[cur].blurb}`, { fontFamily: FONT, fontSize: '11px', color: '#b8f28c' }).setResolution(2));
+          y += 14;
+        }
       }
       const focus = new Button(this, '◎ Show me', 120, 32, () => {
         this.gs.focusOn(m);
