@@ -8,15 +8,23 @@ import { lockLandscape } from './platform';
 
 lockLandscape();
 
-// Chrome on iPad can keep laying the page out at the portrait size (820x1042) after rotating to
-// landscape, even across reloads, while the window is really 1180 wide. outerWidth and innerHeight
-// still report the true visible area, so size the game container from those, not from CSS layout.
+// Chrome on iPad keeps laying the page out at whatever size the tab started with, even after the
+// device rotates (and across reloads), so innerWidth/innerHeight and CSS sizes go stale. The window's
+// outer size does follow rotation, so on touch devices size the game container from that, minus the
+// browser toolbar height measured at startup (when inner and outer agree on the orientation).
 const appEl = document.getElementById('app')!;
+const touch = navigator.maxTouchPoints > 0;
+const sameShape = (outerWidth > outerHeight) === (innerWidth > innerHeight);
+const toolbarH = touch && sameShape ? Math.max(0, Math.min(300, outerHeight - innerHeight)) : 0;
 function fitApp(): void {
-  const touch = navigator.maxTouchPoints > 0;
-  const w = touch && outerWidth > innerWidth + 40 ? outerWidth : innerWidth;
+  let w = innerWidth;
+  let h = innerHeight;
+  if (touch && outerWidth > 0 && outerHeight > 0) {
+    w = outerWidth;
+    h = outerHeight - toolbarH;
+  }
   appEl.style.width = `${w}px`;
-  appEl.style.height = `${innerHeight}px`;
+  appEl.style.height = `${h}px`;
 }
 fitApp();
 
@@ -67,7 +75,7 @@ if (new URLSearchParams(location.search).has('debug')) {
       .join('\n');
     box.textContent = [
       `inner     ${innerWidth}x${innerHeight}`,
-      `outer     ${outerWidth}x${outerHeight}`,
+      `outer     ${outerWidth}x${outerHeight}  toolbar ${toolbarH}`,
       `client    ${document.documentElement.clientWidth}x${document.documentElement.clientHeight}`,
       `visualVP  ${vv ? `${Math.round(vv.width)}x${Math.round(vv.height)} scale ${vv.scale.toFixed(2)}` : '-'}`,
       `screen    ${screen.width}x${screen.height} ${screen.orientation?.type ?? ''}`,
