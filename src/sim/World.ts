@@ -14,8 +14,10 @@ import { spawnBadger, updateBadger, type Badger } from './predators/Badger';
 import { Rng } from './rng';
 import { GEAR, type GearKind, type GearSlot } from './Gear';
 import { MINIGAME_NAMES, ROOM_DEFS, roomContains, roomsAdjacent, SYNERGIES, WONDERS, type MiniGameKind, type Room, type RoomType, type SynergyDef, type Theme } from './Rooms';
-import { makeNeighbors, RES_ICON, RES_VALUE, VISITOR_NAMES, type NeighborPack, type Res, type TradeOffer, type Visitor } from './Neighbors';
-import { RIBBON_LABEL, scorePageant, type PageantResult, type Ribbon } from './Pageant';
+import { LEAGUE_POINTS, makeNeighbors, RES_ICON, RES_VALUE, RIVAL_GROWTH, RIVAL_MAX_SKILL, VISITOR_NAMES, type NeighborPack, type Res, type TradeOffer, type Visitor } from './Neighbors';
+import { ribbonFor, RIBBON_LABEL, scorePageant, SEASONS_PER_YEAR, standards, type LeagueRow, type PageantResult, type Ribbon } from './Pageant';
+import { currentChapter, goalNeed, goalProgress, newChronicle, rewardLabel, type Reward } from './Chronicle';
+import { DISCOVERY_DEFS, FOSSIL_COUNT, layerTile, placeDiscoveries, STRATA, stratumOfTile, type Discovery } from './Strata';
 import { GEAR_KINDS } from './Gear';
 import { seasonOf, type SeasonDef, type SeasonInfo, type Weather } from './Seasons';
 import { makeNode, type NodeType, type ResourceNode } from './Surface';
@@ -45,7 +47,9 @@ export interface MiniGameResult {
 
 /** Food spent to host a formal feast in the Grand Banquet Hall. */
 export const FEAST_COST = 6;
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
+/** Rows in the version 1 grid, before the deep strata were added. */
+const V1_H = 48;
 
 export interface WorldOptions {
   seed?: number;
@@ -99,11 +103,25 @@ export class World {
   eagleTimer: number = CFG.EAGLE.firstDelay;
   cobraTimer: number = CFG.COBRA.firstDelay;
   autoPredators: boolean;
-  stats = { dug: 0, boltHoles: 0, eaglesEvaded: 0, eaglesBonked: 0, mobs: 0, gathered: 0, crafted: 0, miniGames: 0, sniffs: 0, seasons: 1, pageants: 0, trades: 0, pups: 0, flips: 0, decoys: 0, honey: 0, feasts: 0, bestRibbon: 'none' as Ribbon };
+  stats = {
+    dug: 0, boltHoles: 0, eaglesEvaded: 0, eaglesBonked: 0, mobs: 0, gathered: 0, crafted: 0, miniGames: 0, sniffs: 0, seasons: 1, pageants: 0, trades: 0, pups: 0, flips: 0, decoys: 0, honey: 0, feasts: 0, bestRibbon: 'none' as Ribbon,
+    /** Deepest tunnel (rows below the surface) and deepest stratum reached (0..3). */
+    deepest: 0, strata: 0, fossils: 0,
+    /** Pageants where the colony beat both rivals; Kalahari Cups; Golds won in Year 2+. */
+    pageantWins: 0, cups: 0, goldLate: 0,
+  };
   materials = { grass: 0, gems: 0 };
   /** Colony Prestige: earned from the Amphitheater and pageant ribbons; unlocks Tier 3 blueprints. */
   prestige = 0;
-  unlocks = { crystalTheme: false, fountain: false, betterTrades: false, blueprints: new Set<RoomType>(), extraSlots: 0 };
+  unlocks = { crystalTheme: false, fountain: false, betterTrades: false, blueprints: new Set<RoomType>(), extraSlots: 0, digTier: 0, legendary: false };
+  /** Fossils, the spring, the geode and the First Burrow, hidden in the strata. */
+  discoveries: Discovery[] = [];
+  /** The Colony Chronicle: chapters of goals (see Chronicle.ts). */
+  chronicle = newChronicle();
+  private chronicleTimer = 1;
+  /** Pageant League points this year (the rivals keep theirs on their NeighborPack). */
+  leaguePoints = 0;
+  private digWarn = 0;
   /** Things the pageant judges that reset each season. */
   seasonal = { pantryKinds: new Set<string>(), bestMiniGame: 0 };
   neighbors: NeighborPack[] = makeNeighbors();
@@ -136,6 +154,10 @@ export class World {
     this.autoPredators = opts.autoPredators ?? true;
     this.grid = new Grid(CFG.W, CFG.H, SY);
     this.grid.generate(this.rng);
+    // The deep strata use their own rng so the rest of the simulation is unchanged.
+    const deep = new Rng(((opts.seed ?? 1) * 104729 + 7) >>> 0);
+    this.grid.generateDeep(deep);
+    this.discoveries = placeDiscoveries(this.grid, deep);
 
     // Starting burrow: an entrance shaft and a small chamber.
     const ex = CFG.ENTRANCE_X;
@@ -517,6 +539,8 @@ export class World {
     if (this.sniffFx && (this.sniffFx.t -= dt) <= 0) this.sniffFx = null;
     if (this.dangerTimer > 0) this.dangerTimer -= dt;
     this.pantryWarn -= dt;
+    this.digWarn -= dt;
+    this.updateChronicle(dt);
     if (this.autoPredators) this.schedulePredators(dt);
     this.updateVisitors(dt);
     this.updateConservatory(dt);
@@ -534,6 +558,123 @@ export class World {
 
   get seasonNumber(): number {
     return Math.floor((this.clock.day - 1) / CFG.SEASON_DAYS) + 1;
+  }
+  /** Pageant year: four seasons, ending with the Kalahari Cup. */
+  get year(): number {
+    return Math.floor((this.seasonNumber - 1) / SEASONS_PER_YEAR) + 1;
+  }
+
+  // ---------------------------------------------------------------- colony chronicle
+
+  private updateChronicle(dt: number): void {
+    if ((this.chronicleTimer -= dt) > 0) return;
+    this.chronicleTimer = 1;
+    this.checkChronicle();
+  }
+
+  /** Complete at most one goal (or the chapter) per call, so each gets its own moment. */
+  checkChronicle(): boolean {
+    const ch = currentChapter(this.chronicle);
+    if (!ch) return false;
+    const done = this.chronicle.done;
+    for (const g of ch.goals) {
+      if (done.has(g.id) || goalProgress(this, g) < goalNeed(g)) continue;
+      done.add(g.id);
+      this.applyReward(g.reward);
+      this.sfx('success');
+      this.toast(`📖 Chronicle: ${g.text} ✓  ${rewardLabel(g.reward)}`, 'good');
+      return true;
+    }
+    if (!ch.goals.every((g) => done.has(g.id))) return false;
+    this.applyReward(ch.reward);
+    this.chronicle.chapter++;
+    this.sfx('success');
+    this.toast(`📖 Chapter complete: ${ch.icon} ${ch.title}! ${ch.rewardText}.`, 'good');
+    const next = currentChapter(this.chronicle);
+    if (next) this.toast(`📖 Chapter ${this.chronicle.chapter + 1}: ${next.icon} ${next.title}. ${next.intro}`, 'good');
+    else {
+      this.unlocks.legendary = true;
+      this.toast('🌟 The Chronicle is complete: Sunburst Hollow is a Legendary Burrow! Keep chasing Kalahari Cups.', 'good');
+    }
+    return true;
+  }
+
+  applyReward(r: Reward): void {
+    if (r.food) this.add('food', r.food);
+    if (r.grass) this.materials.grass += r.grass;
+    if (r.gems) this.materials.gems += r.gems;
+    if (r.morale) this.addMorale(r.morale);
+    if (r.trinkets) this.trinkets += r.trinkets;
+    if (r.slot) this.unlocks.extraSlots += r.slot;
+    if (r.digTier) this.setDigTier(r.digTier);
+    if (r.hint) for (const d of this.discoveries) if (d.kind === r.hint) d.hinted = true;
+    if (r.prestige) this.addPrestige(r.prestige);
+  }
+
+  setDigTier(t: number): void {
+    this.unlocks.digTier = Math.max(this.unlocks.digTier, t);
+    this.grid.digTier = this.unlocks.digTier;
+  }
+
+  // ---------------------------------------------------------------- strata & discoveries
+
+  /** Called after digging: anything newly brought into the light is discovered. */
+  private checkDiscoveries(): void {
+    for (const d of this.discoveries) {
+      if (d.found || !this.grid.revealed[this.grid.idx(d.x, d.y)]) continue;
+      d.found = true;
+      this.discover(d);
+    }
+  }
+
+  private discover(d: Discovery): void {
+    const def = DISCOVERY_DEFS[d.kind];
+    this.sfx('success');
+    switch (d.kind) {
+      case 'fossil':
+        this.stats.fossils++;
+        this.trinkets++;
+        this.addPrestige(1);
+        this.toast(`🦴 Fossil ${this.stats.fossils}/${FOSSIL_COUNT}! Your Diggers unearthed ${d.name}. (+1 ⭐, a curio for the judges)`, 'good');
+        break;
+      case 'spring':
+        this.unlocks.blueprints.add('lagoon');
+        this.addMorale(5);
+        this.toast(`💧 ${def.name}! Cool water bubbles up through the Ironstone. 📜 Aquifer Lagoon blueprint unlocked!`, 'good');
+        break;
+      case 'geode':
+        this.unlocks.blueprints.add('conservatory');
+        this.unlocks.crystalTheme = true;
+        this.materials.gems += 6;
+        this.toast(`🔮 The ${def.name}! Sunlit selenite everywhere: +6 💎, Crystal Cavern theme, 📜 Crystal Conservatory blueprint!`, 'good');
+        break;
+      case 'ruin':
+        this.unlocks.extraSlots++;
+        this.addMorale(10);
+        this.addPrestige(10);
+        this.toast('🏛️ The First Burrow! Paw-painted walls tell the story of the very first mob. +10 ⭐ and room for one more meerkat.', 'good');
+        break;
+    }
+  }
+
+  /** Track the deepest tunnel and announce each new stratum. */
+  private noteDepth(cell: number, tileBefore: number): void {
+    const d = this.grid.depthOf(cell);
+    if (d > this.stats.deepest) this.stats.deepest = d;
+    const s = stratumOfTile(tileBefore);
+    if (s > this.stats.strata) {
+      this.stats.strata = s;
+      const def = STRATA[s];
+      this.toast(`${def.icon} Your Diggers broke into the ${def.name}! ${def.blurb}`, 'good');
+    }
+  }
+
+  /** Why a solid cell can't be dug yet, or null. */
+  lockedReason(i: number): string | null {
+    if (!this.grid.lockedAt(i)) return null;
+    return this.grid.tiles[i] === T.Stone
+      ? '🪨 Ironstone is too hard for bare paws. Finish Chronicle chapter 2 (📖) for Flint Picks.'
+      : '🔮 Crystal is too hard even for flint. Finish Chronicle chapter 4 (📖) for Crystal-Tipped Picks.';
   }
 
   // ---------------------------------------------------------------- pups & mentorship
@@ -981,6 +1122,11 @@ export class World {
   queueDig(x: number, y: number): boolean {
     if (!this.grid.inBounds(x, y)) return false;
     const i = this.grid.idx(x, y);
+    const locked = this.lockedReason(i);
+    if (locked && this.digWarn <= 0) {
+      this.digWarn = 8;
+      this.toast(locked, 'warn');
+    }
     if (!this.grid.diggableAt(i) || this.jobs.at(i)) return false;
     return !!this.jobs.add('dig', i, this.grid.digTime(i));
   }
@@ -1048,6 +1194,7 @@ export class World {
         const i = this.grid.idx(cx, cy);
         const t = this.grid.tiles[i];
         if (t === T.Rock) return { ok: false, reason: 'Solid rock in the way' };
+        if (this.grid.lockedAt(i)) return { ok: false, reason: t === T.Stone ? 'Ironstone: needs Flint Picks' : 'Crystal: needs Crystal Picks' };
         if (t === T.BoltHole) return { ok: false, reason: 'Overlaps a bolt-hole' };
         if (this.grid.roomAt[i] >= 0) return { ok: false, reason: 'Overlaps another room' };
       }
@@ -1091,12 +1238,16 @@ export class World {
     this.jobs.remove(job.id);
     if (job.kind === 'dig') {
       if (!g.diggableAt(job.cell)) return;
+      const before = g.tiles[job.cell];
       g.set(g.xOf(job.cell), g.yOf(job.cell), job.bolt ? T.BoltHole : T.Tunnel);
       this.stats.dug++;
       if (job.bolt) this.stats.boltHoles++;
-      const clay = job.total >= CFG.DIG_CLAY * 0.99;
+      this.noteDepth(job.cell, before);
+      this.checkDiscoveries();
+      const chance =
+        before === T.Crystal ? CFG.GEM_CHANCE_CRYSTAL : before === T.Stone ? CFG.GEM_CHANCE_STONE : before === T.Clay ? CFG.GEM_CHANCE_CLAY : CFG.GEM_CHANCE_SAND;
       const luck = by ? 1 + 0.25 * (this.stars(by, 'Digger') - 1) : 1;
-      if (this.rng.chance((clay ? CFG.GEM_CHANCE_CLAY : CFG.GEM_CHANCE_SAND) * luck)) {
+      if (this.rng.chance(chance * luck)) {
         this.materials.gems++;
         this.sfx('gem');
         this.toast('💎 A Digger unearthed a gem!', 'good');
@@ -1762,14 +1913,52 @@ export class World {
     rewards.push(`+${prestige} ⭐ Prestige`);
     for (const p of this.neighbors) p.relation = Math.min(100, p.relation + 3);
 
+    // Pageant League: the rival mobs are judged too, and keep getting better.
+    const year = this.year;
     const rivals = this.neighbors.map((p) => {
-      const total = Math.max(4, Math.min(20, Math.round(8 + this.stats.pageants * 1.5 + this.rng.range(-2, 3))));
-      p.last = { total, tier: RIBBON_LABEL[ribbonOf(total)] };
-      return { name: p.name, total, ribbon: ribbonOf(total) };
+      const total = Math.max(4, Math.min(20, Math.round(p.skill + this.rng.range(-2, 2.5))));
+      p.skill = Math.min(RIVAL_MAX_SKILL, p.skill + RIVAL_GROWTH);
+      p.last = { total, tier: RIBBON_LABEL[ribbonFor(total, year)] };
+      return { name: p.name, total, ribbon: ribbonFor(total, year) };
     });
+    const totals = [score.total, ...rivals.map((v) => v.total)];
+    const pointsFor = (t: number) => LEAGUE_POINTS[totals.filter((o) => o > t).length];
+    this.leaguePoints += pointsFor(score.total);
+    this.neighbors.forEach((p, i) => (p.points += pointsFor(rivals[i].total)));
+    if (rivals.every((v) => score.total > v.total)) {
+      this.stats.pageantWins++;
+      rewards.push('🥇 Best burrow of the three mobs!');
+    }
+    if (year >= 2 && r === 'gold') this.stats.goldLate++;
+    const league: LeagueRow[] = [
+      { name: 'Sunburst Hollow (you)', points: this.leaguePoints, you: true },
+      ...this.neighbors.map((p) => ({ name: p.name, points: p.points, you: false })),
+    ].sort((a, b) => b.points - a.points || (a.you ? -1 : b.you ? 1 : 0));
+
+    // The year's last pageant awards the Kalahari Cup. Ties go to the player.
+    let cup: PageantResult['cup'] = null;
+    if (this.seasonNumber % SEASONS_PER_YEAR === 0) {
+      const winner = league[0];
+      cup = { winner: winner.name, you: winner.you };
+      if (winner.you) {
+        this.stats.cups++;
+        this.unlocks.extraSlots++;
+        this.trinkets += 2;
+        this.addMorale(10);
+        this.addPrestige(10);
+        rewards.push('🏆 KALAHARI CUP! +10 ⭐, room for one more meerkat, and the cup goes on display');
+      } else {
+        this.addPrestige(3);
+        rewards.push(`🏆 The ${winner.name} won this year's Kalahari Cup. +3 ⭐ for a good season`);
+      }
+      this.leaguePoints = 0;
+      for (const p of this.neighbors) p.points = 0;
+      const next = standards(year + 1);
+      if (year < 3) rewards.push(`📜 The Elders will be stricter next year: Bronze ${next.bronze}★, Silver ${next.silver}★, Gold ${next.gold}★`);
+    }
     this.stats.pageants++;
     if (rank > order.indexOf(this.stats.bestRibbon)) this.stats.bestRibbon = r;
-    const result: PageantResult = { ...score, seasonName: this.season.def.name, rewards, rivals };
+    const result: PageantResult = { ...score, seasonName: this.season.def.name, rewards, rivals, year, league, cup };
     this.lastPageant = result;
     this.seasonal = { pantryKinds: new Set(), bestMiniGame: 0 };
     this.emit({ kind: 'pageant', result });
@@ -1801,6 +1990,10 @@ export class World {
       badgers: this.badgers.map((b) => ({ ...b })),
       visitors: this.visitors.map((v) => ({ ...v, offer: { give: { ...v.offer.give }, want: { ...v.offer.want } } })),
       neighbors: this.neighbors.map((n) => ({ ...n, last: n.last ? { ...n.last } : null })),
+      revealed: packBytes(g.revealed),
+      discoveries: this.discoveries.map((d) => ({ ...d })),
+      chronicle: { chapter: this.chronicle.chapter, done: [...this.chronicle.done] },
+      leaguePoints: this.leaguePoints,
       food: this.food,
       morale: this.morale,
       prestige: this.prestige,
@@ -1834,7 +2027,7 @@ export class World {
 
   /** Rebuild a world from serialize() output. */
   static load(d: SaveData): World {
-    if (d.version !== SAVE_VERSION) throw new Error(`Unsupported save version ${d.version}`);
+    if (d.version !== 1 && d.version !== SAVE_VERSION) throw new Error(`Unsupported save version ${d.version}`);
     const w = new World({ seed: 1, startMeerkats: 0, roles: [], autoPredators: d.autoPredators });
     w.rng.state = d.rng;
     w.traitRng.state = d.traitRng;
@@ -1842,9 +2035,22 @@ export class World {
     w.clock.t = d.clock.t;
     w.clock.day = d.clock.day;
     const g = w.grid;
+    const fresh = g.tiles.slice();
     unpackBytes(d.tiles, g.tiles);
     unpackBytes(d.blocked, g.blocked);
     g.roomAt.set(d.roomAt);
+    if (d.version === 1) {
+      // Version 1 burrows were 48 rows deep with a rock floor. Open the floor onto the new
+      // deep strata below, and keep only the discoveries still buried in solid ground.
+      for (let y = V1_H - 2; y < V1_H; y++) for (let x = 0; x < g.w; x++) g.tiles[g.idx(x, y)] = fresh[g.idx(x, y)];
+      w.discoveries = w.discoveries.filter((k) => g.solidAt(g.idx(k.x, k.y)));
+      g.resetFog();
+    } else {
+      unpackBytes(d.revealed!, g.revealed);
+      w.discoveries = d.discoveries!.map((k) => ({ ...k }));
+      w.chronicle = { chapter: d.chronicle!.chapter, done: new Set(d.chronicle!.done) };
+      w.leaguePoints = d.leaguePoints ?? 0;
+    }
     g.changed.length = 0;
     w.jobs.restore(d.jobs);
     w.rooms = d.rooms.map((r) => ({ ...r }));
@@ -1861,16 +2067,22 @@ export class World {
     w.scorpions = d.scorpions.map((x) => ({ ...x }));
     w.badgers = d.badgers.map((b) => ({ ...b }));
     w.visitors = d.visitors.map((v) => ({ ...v }));
-    w.neighbors = d.neighbors.map((n) => ({ ...n }));
+    const packs = makeNeighbors();
+    w.neighbors = d.neighbors.map((n) => ({ ...packs.find((p) => p.id === n.id)!, ...n }));
     w.food = d.food;
     w.morale = d.morale;
     w.prestige = d.prestige;
     w.trinkets = d.trinkets;
     w.materials = { ...d.materials };
     w.gearStock = { ...w.gearStock, ...d.gearStock };
-    w.unlocks = { ...d.unlocks, blueprints: new Set(d.unlocks.blueprints) };
+    w.unlocks = { ...w.unlocks, ...d.unlocks, blueprints: new Set(d.unlocks.blueprints) };
+    g.digTier = w.unlocks.digTier;
     w.seasonal = { pantryKinds: new Set(d.seasonal.pantryKinds), bestMiniGame: d.seasonal.bestMiniGame };
-    w.stats = { ...d.stats };
+    w.stats = { ...w.stats, ...d.stats };
+    if (d.version === 1) {
+      for (let i = 0; i < g.tiles.length; i++) if (g.walkableAt(i) && g.yOf(i) >= SY) w.stats.deepest = Math.max(w.stats.deepest, g.depthOf(i));
+      w.stats.strata = Math.max(0, stratumOfTile(layerTile(w.stats.deepest)));
+    }
     const t = d.timers;
     w.dangerTimer = t.danger;
     w.eagleTimer = t.eagle;
@@ -1937,6 +2149,24 @@ export class World {
     const p = r ? this.addPup(r.x + 2, r.y + r.h - 1) : this.addPup(CFG.ENTRANCE_X, SY + 6);
     this.toast(`(debug) ${p.name} the pup arrives.`);
   }
+  /** Light up the whole underground and hand out every pick. */
+  debugRevealDeep(): void {
+    this.setDigTier(2);
+    for (let i = 0; i < this.grid.tiles.length; i++) {
+      if (!this.grid.revealed[i]) {
+        this.grid.revealed[i] = 1;
+        this.grid.changed.push(i);
+      }
+    }
+    this.toast('(debug) The whole underground is lit up, and Diggers have Crystal-Tipped Picks.');
+  }
+  /** Tick off every goal in the current Chronicle chapter. */
+  debugChronicle(): void {
+    const ch = currentChapter(this.chronicle);
+    if (!ch) return;
+    for (const g of ch.goals) this.chronicle.done.add(g.id);
+    this.checkChronicle();
+  }
   debugGiveMaterials(): void {
     this.prestige += 5;
     this.materials.grass += 10;
@@ -1976,15 +2206,20 @@ export interface SaveData {
   badgers: Badger[];
   visitors: Visitor[];
   neighbors: NeighborPack[];
+  /** Version 2+. */
+  revealed?: string;
+  discoveries?: Discovery[];
+  chronicle?: { chapter: number; done: string[] };
+  leaguePoints?: number;
   food: number;
   morale: number;
   prestige: number;
   trinkets: number;
   materials: World['materials'];
   gearStock: World['gearStock'];
-  unlocks: Omit<World['unlocks'], 'blueprints'> & { blueprints: RoomType[] };
+  unlocks: Partial<Omit<World['unlocks'], 'blueprints'>> & { blueprints: RoomType[] };
   seasonal: { pantryKinds: string[]; bestMiniGame: number };
-  stats: World['stats'];
+  stats: Partial<World['stats']>;
   timers: {
     danger: number; eagle: number; cobra: number; jackal: number; badger: number; visitor: number;
     grow: number; sniff: number; weatherAt: number; weatherLeft: number; pantryWarn: number;
@@ -1995,8 +2230,4 @@ export interface SaveData {
   alphaId: number | null;
   squad: number[];
   autoPredators: boolean;
-}
-
-function ribbonOf(total: number): Ribbon {
-  return total >= 17 ? 'gold' : total >= 12 ? 'silver' : total >= 8 ? 'bronze' : 'none';
 }

@@ -9,7 +9,9 @@ import { safeInsets } from '../platform';
 import { eagleGroundX } from '../sim/predators/Eagle';
 import { MINIGAME_NAMES, ROOM_DEFS, SYNERGIES, THEMES, THEME_ORDER, WONDERS, type Room, type RoomType } from '../sim/Rooms';
 import { RES_ICON, type Visitor } from '../sim/Neighbors';
-import { RIBBON_LABEL, scorePageant } from '../sim/Pageant';
+import { RIBBON_LABEL, scorePageant, SEASONS_PER_YEAR, standards } from '../sim/Pageant';
+import { CHAPTERS, goalNeed, goalProgress, rewardLabel } from '../sim/Chronicle';
+import { DISCOVERY_DEFS, FOSSIL_COUNT, STRATA } from '../sim/Strata';
 import { WEATHER_LABEL } from '../sim/Seasons';
 import { FEAST_COST, type Tone, type World } from '../sim/World';
 import { Button } from '../ui/Button';
@@ -149,7 +151,8 @@ export class HudScene extends Phaser.Scene {
       return new Button(this, '', 96, 46, () => {
         const d = ROOM_DEFS[type];
         if (!this.world.blueprintUnlocked(type)) {
-          this.toast(`📜 ${d.icon} ${d.name} blueprint needs ${d.unlock} ⭐ Prestige (you have ${this.world.prestige}). Build an Amphitheater or win pageant ribbons!`, 'warn');
+          const dig = type === 'lagoon' ? ', or find the 💧 Underground Spring in the Ironstone' : type === 'conservatory' ? ', or find the 🔮 Great Geode in the Crystal Deep' : '';
+          this.toast(`📜 ${d.icon} ${d.name} blueprint needs ${d.unlock} ⭐ Prestige (you have ${this.world.prestige}). Build an Amphitheater or win pageant ribbons${dig}!`, 'warn');
           return;
         }
         this.gs.setTool('room', type);
@@ -189,7 +192,7 @@ export class HudScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
     this.goals.on('pointerdown', (_p: unknown, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
       ev?.stopPropagation();
-      this.goalsOpen = !this.goalsOpen;
+      this.openChronicle();
     });
 
     this.edge = this.add.graphics();
@@ -370,6 +373,12 @@ export class HudScene extends Phaser.Scene {
       const sc = scorePageant(w);
       const lines: string[] = [`Next pageant: ${when}`, `If the Elders judged now: ${sc.total}/20 · ${RIBBON_LABEL[sc.ribbon]}`];
       for (const cat of sc.categories) lines.push(`${cat.icon} ${'★'.repeat(cat.stars)}${'☆'.repeat(5 - cat.stars)}  ${cat.name}: ${cat.notes.join(', ')}`);
+      const std = standards(w.year);
+      lines.push(`📜 Year ${w.year} Elders: Bronze ${std.bronze}★ · Silver ${std.silver}★ · Gold ${std.gold}★${w.year < 3 ? ' (stricter every year)' : ''}`);
+      lines.push('');
+      const toCup = SEASONS_PER_YEAR - (((w.seasonNumber - 1) % SEASONS_PER_YEAR) + 1);
+      lines.push(`🏆 Pageant League, Year ${w.year}: the Kalahari Cup is decided ${toCup === 0 ? 'at this season’s pageant!' : `in ${toCup + 1} pageants (after the Long Dry)`}`);
+      lines.push(`   ${this.leagueLine()}  ·  Cups won: ${w.stats.cups}`);
       lines.push('');
       lines.push(`⭐ Prestige ${w.prestige}  (Amphitheater +2 a night, ribbons +3 to +8)`);
       for (const t of WONDERS) {
@@ -387,6 +396,69 @@ export class HudScene extends Phaser.Scene {
       const t = this.add.text(0, top - 6, lines.join('\n'), { fontFamily: FONT, fontSize: this.compact ? '11px' : '12px', color: '#fff7e6', wordWrap: { width }, lineSpacing: 2 }).setResolution(2);
       c.add(t);
       return top + t.height;
+    }, 600);
+  }
+
+  /** "You 5 · Dune Ridge 4 · Acacia Hollow 3", best first. */
+  private leagueLine(): string {
+    const w = this.world;
+    const rows = [{ name: 'You', pts: w.leaguePoints, you: true }, ...w.neighbors.map((n) => ({ name: n.name.replace(/ Mob$/, ''), pts: n.points, you: false }))];
+    rows.sort((a, b) => b.pts - a.pts || (a.you ? -1 : b.you ? 1 : 0));
+    return rows.map((r, i) => `${i + 1}. ${r.name} ${r.pts}`).join(' · ');
+  }
+
+  /** The Colony Chronicle journal: chapters, goals, rewards, and what lies deeper. */
+  openChronicle(): void {
+    const w = this.world;
+    this.openModal('📖 Colony Chronicle', (c, width, top) => {
+      const cur = w.chronicle.chapter;
+      const small = this.compact;
+      const lines: string[] = [];
+      if (small && cur > 0) lines.push(`✅ Chapter${cur > 1 ? `s 1–${cur}` : ' 1'} complete`);
+      CHAPTERS.forEach((ch, i) => {
+        if (i < cur) {
+          if (!small) lines.push(`✅ ${ch.icon} ${ch.title}: ${ch.rewardText}`);
+          return;
+        }
+        if (i === cur) {
+          lines.push('', `${ch.icon} Chapter ${i + 1}: ${ch.title}`, `“${ch.intro}”`);
+          for (const g of ch.goals) {
+            const done = w.chronicle.done.has(g.id);
+            const need = goalNeed(g);
+            const prog = !done && need > 1 ? `  ${goalProgress(w, g)}/${need}` : '';
+            lines.push(`${done ? '✅' : '⬜'} ${g.text}${prog}   ${done ? '' : rewardLabel(g.reward)}`);
+          }
+          lines.push(`🎁 Chapter reward: ${ch.rewardText} (${rewardLabel(ch.reward)})`, '');
+          return;
+        }
+        if (small && i > cur + 1) return;
+        lines.push(`🔒 Chapter ${i + 1}: ${ch.icon} ${ch.title}`);
+      });
+      if (cur >= CHAPTERS.length) lines.push('', '🌟 The Chronicle is complete: Sunburst Hollow is a Legendary Burrow!', 'Keep defending the Kalahari Cup each year.');
+      lines.push('');
+      const picks = ['bare paws', '🪓 Flint Picks', '💎 Crystal-Tipped Picks'][w.grid.digTier];
+      lines.push(`⛏️ Underground (${picks}, deepest tunnel ${w.stats.deepest}):`);
+      lines.push(
+        STRATA.map((st, i) => (i <= w.stats.strata ? `${st.icon} ${st.name}` : i <= w.grid.digTier + 1 ? `❔ ${st.name}` : `🔒 ${st.name}`)).join('  ·  '),
+      );
+      const found = (k: 'spring' | 'geode' | 'ruin') => {
+        const d = w.discoveries.find((x) => x.kind === k);
+        const def = DISCOVERY_DEFS[k];
+        return d?.found ? `${def.icon} ${def.name} ✓` : d?.hinted ? `🗺️ ${def.name} (marked)` : `❔ ${def.name}`;
+      };
+      lines.push(`🦴 Fossils ${w.stats.fossils}/${FOSSIL_COUNT}  ·  ${found('spring')}  ·  ${found('geode')}  ·  ${found('ruin')}`);
+      const t = this.add
+        .text(0, top - 6, lines.join('\n'), { fontFamily: FONT, fontSize: small ? '11px' : '12px', color: '#fff7e6', wordWrap: { width }, lineSpacing: 2 })
+        .setResolution(2);
+      c.add(t);
+      const y = top + t.height + 4;
+      const b = new Button(this, this.goalsOpen ? 'Hide the checklist' : 'Show the checklist', 180, 32, () => {
+        this.goalsOpen = !this.goalsOpen;
+        this.modalRefresh?.();
+      }, { fontSize: 12 });
+      b.setPosition(90, y + 16);
+      c.add(b);
+      return y + 36;
     }, 600);
   }
 
@@ -689,7 +761,7 @@ export class HudScene extends Phaser.Scene {
     const phase = w.clock.phase;
     const s = w.season;
     const weather = WEATHER_LABEL[w.weather] || (w.frost ? '🥶 Frost' : '');
-    const season = `${s.def.icon} ${this.compact ? s.def.short : s.def.name} ${s.dayInSeason}/${CFG.SEASON_DAYS}`;
+    const season = `${s.def.icon} ${this.compact ? s.def.short : s.def.name} ${s.dayInSeason}/${CFG.SEASON_DAYS} ${this.compact ? `Y${w.year}` : `· Year ${w.year}`}`;
     this.dayText.setText(
       `${PHASE_ICON[phase]} Day ${w.clock.day} ${this.compact ? '' : `· ${phase} `}${w.clock.timeLabel}${w.nightFast ? ' ⏩' : ''}   ${season}${weather ? `  ${weather}` : ''}`,
     );
@@ -751,44 +823,26 @@ export class HudScene extends Phaser.Scene {
       this.rosterBtns[i].setLabel(`${m.id === w.alphaId ? '🎮' : ''}${m.name}  ${job} ${gear}\n${activity(m)} ${statusIcons(w, m)}`);
     });
 
-    // goals: show what's next
-    const has = (t: RoomType) => w.builtRooms(t).length > 0;
-    const goals: [boolean, string][] = [
-      [w.stats.dug > 0, 'Dig a tunnel (⛏️ Dig)'],
-      [has('cellar'), 'Build a Root Cellar'],
-      [has('den'), 'Build a Snuggle Den'],
-      [has('perch'), 'Build a Lookout Perch'],
-      [w.stats.boltHoles > 0, 'Dig a bolt-hole near far bushes'],
-      [w.stats.eaglesEvaded > 0, 'Dodge an eagle'],
-      [w.stats.mobs > 0, 'Shoo a cobra with 3+ meerkats'],
-      [w.stats.miniGames > 0, 'Tap a ▶ room to play its mini-game'],
-      [has('workshop'), 'Build a Tinkering Workshop'],
-      [w.stats.crafted > 0, 'Craft an accessory'],
-      [has('parlor'), 'Build a Sun-Parlor'],
-      [w.stats.sniffs > 0, 'Sniff out buried grubs (Golden Sun)'],
-      [w.stats.seasons >= 4, 'Reach the Long Dry'],
-      [has('amphitheater'), 'Build a Storytelling Amphitheater'],
-      [w.stats.trades > 0, 'Trade with a visiting neighbour'],
-      [w.activeSynergies().some((x) => x.def.id !== 'quickdrop'), 'Activate a ✨ room synergy'],
-      [has('lagoon') || has('conservatory'), 'Build a Tier 3 wonder room'],
-      [w.stats.bestRibbon !== 'none', 'Win a pageant ribbon'],
-      [w.stats.bestRibbon === 'gold', 'Win the Gold Sunburst Trophy'],
-      [has('playroom'), "Build a Pups' Playroom"],
-      [w.pups.some((p) => p.mentorId != null) || w.stats.pups > 0, 'Give a pup a mentor (drag an adult onto it)'],
-      [w.stats.pups > 0, 'Raise a pup to adulthood'],
-      [w.stats.decoys > 0, 'Toss a decoy gourd at a jackal'],
-      [w.stats.flips > 0, 'Tail-Dodge & Flip a scorpion'],
-      [w.stats.honey > 0, 'Distract a honey badger with honeycomb'],
-      [has('banquet'), 'Build the Grand Banquet Hall'],
-      [w.neighbors.some((n) => n.partner), 'Win over a permanent trading partner at a feast'],
-    ];
-    const done = goals.filter((g) => g[0]).length;
-    const todo = goals.filter((g) => !g[0]).slice(0, this.compact ? 4 : 6);
-    const goalText = this.goalsOpen
-      ? `🎯 Goals ${done}/${goals.length}  (tap to hide)\n` + todo.map(([, s]) => `⬜ ${s}`).join('\n') + (todo.length ? '' : '🏆 All done!')
-      : `🎯 Goals ${done}/${goals.length} ▸`;
+    // Colony Chronicle: the current chapter's open goals (tap for the full journal).
+    const ch = CHAPTERS[w.chronicle.chapter];
+    let goalText: string;
+    if (!ch) goalText = `📖 Chronicle complete 🌟\n🏆 ${this.leagueLine()}`;
+    else {
+      const open = ch.goals.filter((g) => !w.chronicle.done.has(g.id));
+      const head = `📖 Ch.${w.chronicle.chapter + 1} ${ch.title} ${ch.goals.length - open.length}/${ch.goals.length} ▸`;
+      if (!this.goalsOpen) goalText = head;
+      else {
+        const rows = open.slice(0, this.compact ? 3 : 4).map((g) => {
+          const need = goalNeed(g);
+          return `⬜ ${g.text}${need > 1 ? `  ${goalProgress(w, g)}/${need}` : ''}`;
+        });
+        goalText = [head, ...rows, `🏆 ${this.leagueLine()}`].join('\n');
+      }
+    }
     if (this.goals.text !== goalText) this.goals.setText(goalText);
-    this.goals.setPosition(W - 8, this.topH + 8).setFontSize(this.compact ? 10 : 12);
+    this.goals.setPosition(W - 8 - this.inset.right, this.topH + 8).setFontSize(this.compact ? 10 : 12);
+    const wrap = this.compact ? 220 : 300;
+    if (this.goals.style.wordWrapWidth !== wrap) this.goals.setWordWrapWidth(wrap);
 
     let ty = this.topH + 8;
     for (const t of [...this.toasts]) {

@@ -1,4 +1,4 @@
-import { SY } from '../config';
+import { CFG, SY } from '../config';
 import type { World } from './World';
 
 export type Ribbon = 'none' | 'bronze' | 'silver' | 'gold';
@@ -23,15 +23,45 @@ export interface PageantScore {
   ribbon: Ribbon;
 }
 
+export interface LeagueRow {
+  name: string;
+  points: number;
+  you: boolean;
+}
+
 export interface PageantResult extends PageantScore {
   seasonName: string;
   rewards: string[];
   rivals: { name: string; total: number; ribbon: Ribbon }[];
+  year: number;
+  /** League table after this pageant, best first. */
+  league: LeagueRow[];
+  /** Set at the year's last pageant: who took the Kalahari Cup. */
+  cup: { winner: string; you: boolean } | null;
 }
 
-/** Spec 8.2: Bronze 8–11, Silver 12–16, Gold 17–20. */
-export function ribbonFor(total: number): Ribbon {
-  return total >= 17 ? 'gold' : total >= 12 ? 'silver' : total >= 8 ? 'bronze' : 'none';
+/** Pageants in a year (one per season). The year's last pageant decides the Kalahari Cup. */
+export const SEASONS_PER_YEAR = 4;
+
+/**
+ * What the Elders expect. Spec 8.2 sets Year 1 (Bronze 8, Silver 12, Gold 17); every later
+ * year the ribbons need one more star (up to +2), and the "deep burrow" and "room variety"
+ * stars need you to have dug and built further.
+ */
+export function standards(year: number) {
+  const k = Math.max(0, Math.min(2, year - 1));
+  return {
+    bronze: 8 + k,
+    silver: 12 + k,
+    gold: 17 + k,
+    depth: [14, CFG.STONE_DEPTH - 2, CFG.STONE_DEPTH + 8][k],
+    variety: 6 + k,
+  };
+}
+
+export function ribbonFor(total: number, year = 1): Ribbon {
+  const s = standards(year);
+  return total >= s.gold ? 'gold' : total >= s.silver ? 'silver' : total >= s.bronze ? 'bronze' : 'none';
 }
 
 const clampStars = (n: number) => Math.max(1, Math.min(5, n));
@@ -40,6 +70,7 @@ const clampStars = (n: number) => Math.max(1, Math.min(5, n));
 export function scorePageant(w: World): PageantScore {
   const built = w.rooms.filter((r) => r.built);
   const g = w.grid;
+  const std = standards(w.year);
 
   // 1. Architectural Grandeur: room variety, excavation depth, active synergies.
   const variety = new Set(built.map((r) => r.type)).size;
@@ -50,8 +81,8 @@ export function scorePageant(w: World): PageantScore {
   const arch: PageantCategory = {
     name: 'Architectural Grandeur',
     icon: '🏛️',
-    stars: clampStars(1 + (variety >= 3 ? 1 : 0) + (variety >= 6 ? 1 : 0) + (depth >= 14 ? 1 : 0) + (syn >= 1 ? 1 : 0) + (lagoon ? 1 : 0)),
-    notes: [`${variety} kind${variety === 1 ? '' : 's'} of room`, `dug ${depth} deep`, `${syn} synerg${syn === 1 ? 'y' : 'ies'}`, ...(lagoon ? ['a lagoon!'] : [])],
+    stars: clampStars(1 + (variety >= 3 ? 1 : 0) + (variety >= std.variety ? 1 : 0) + (depth >= std.depth ? 1 : 0) + (syn >= 1 ? 1 : 0) + (lagoon ? 1 : 0)),
+    notes: [`${variety} kind${variety === 1 ? '' : 's'} of room (${std.variety} impress)`, `dug ${depth} deep (${std.depth} impress)`, `${syn} synerg${syn === 1 ? 'y' : 'ies'}`, ...(lagoon ? ['a lagoon!'] : [])],
   };
 
   // 2. Cozy Aesthetics: cohesive themes, tidy tunnels, lanterns and statues.
@@ -73,7 +104,7 @@ export function scorePageant(w: World): PageantScore {
       tidy ? 'tidy tunnels' : 'unfinished digging',
       ...(w.hasSynergy('glow') ? ['glowing lanterns'] : []),
       ...(w.unlocks.fountain ? ['a sandstone fountain'] : []),
-      ...(w.trinkets >= 3 ? [`${w.trinkets} shiny pebbles & shells`] : []),
+      ...(w.trinkets >= 3 ? [`${w.trinkets} curios on display`] : []),
     ],
   };
 
@@ -108,5 +139,5 @@ export function scorePageant(w: World): PageantScore {
 
   const categories = [arch, cozy, hosp, spirit];
   const total = categories.reduce((s, c) => s + c.stars, 0);
-  return { categories, total, ribbon: ribbonFor(total) };
+  return { categories, total, ribbon: ribbonFor(total, w.year) };
 }

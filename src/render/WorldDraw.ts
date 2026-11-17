@@ -668,3 +668,76 @@ export function makeLabel(scene: Phaser.Scene, size = 7): Phaser.GameObjects.Tex
     .setResolution(4)
     .setDepth(10);
 }
+
+/** Fossils, the spring, the geode and the First Burrow, once seen (or marked on a Chronicle map). */
+export function drawDiscoveries(g: G, w: World, time: number): void {
+  for (const d of w.discoveries) {
+    const seen = w.grid.revealed[w.grid.idx(d.x, d.y)] === 1;
+    const cx = (d.x + 0.5) * S;
+    const cy = (d.y + 0.5) * S;
+    if (!seen) {
+      if (!d.hinted) continue;
+      // A Chronicle map marks the spot: a pulsing gold ring in the dark.
+      const p = 0.5 + 0.5 * Math.sin(time * 0.004);
+      g.lineStyle(1.5, 0xffd23f, 0.45 + 0.4 * p);
+      g.strokeCircle(cx, cy, 10 + p * 3);
+      g.fillStyle(0xffd23f, 0.6);
+      g.fillCircle(cx, cy, 2);
+      continue;
+    }
+    switch (d.kind) {
+      case 'fossil': {
+        // A curled ammonite shell pressed into the soil.
+        g.fillStyle(0xeee3c8, 0.95);
+        g.fillCircle(cx, cy, 5.5);
+        g.lineStyle(1, 0x8a7550, 1);
+        for (let k = 0; k < 3; k++) g.strokeCircle(cx + k * 0.8, cy - k * 0.3, 5 - k * 1.6);
+        g.lineBetween(cx - 5, cy, cx + 5, cy);
+        break;
+      }
+      case 'spring': {
+        g.fillStyle(0x2f8fb0, 1);
+        g.fillEllipse(cx, cy + 4, S * 2.6, 10);
+        g.fillStyle(0x5fd3d9, 1);
+        g.fillEllipse(cx, cy + 3, S * 2.2, 7);
+        const r = (time * 0.01) % 10;
+        g.lineStyle(1, 0xd9fbff, 1 - r / 10);
+        g.strokeEllipse(cx, cy + 3, 6 + r * 2, 2 + r * 0.6);
+        // a bubbling jet
+        for (let k = 0; k < 3; k++) {
+          const t = ((time * 0.002 + k / 3) % 1);
+          g.fillStyle(0xd9fbff, 1 - t);
+          g.fillCircle(cx + (k - 1) * 4, cy + 2 - t * 12, 1.4);
+        }
+        break;
+      }
+      case 'geode': {
+        g.fillStyle(0x2a2140, 1);
+        g.fillEllipse(cx, cy, S * 2.6, S * 2);
+        const glow = 0.6 + 0.4 * Math.sin(time * 0.003);
+        const shards: [number, number, number, number][] = [[-10, 6, 5, 14], [-3, 7, 6, 18], [5, 6, 5, 15], [11, 5, 4, 10], [0, -8, 4, -10]];
+        shards.forEach(([dx, dy, hw, h], k) => {
+          g.fillStyle(k % 2 ? 0xe5a8ff : 0x9fe8ff, glow);
+          g.fillTriangle(cx + dx - hw, cy + dy, cx + dx + hw, cy + dy, cx + dx, cy + dy - h);
+        });
+        break;
+      }
+      case 'ruin': {
+        // Three old sandstone columns under an arch, with paw-print paintings.
+        g.fillStyle(0xcdb894, 1);
+        for (let k = -1; k <= 1; k++) g.fillRect(cx + k * 14 - 3, cy - 14, 6, 24);
+        g.fillRect(cx - 22, cy - 18, 44, 5);
+        g.fillStyle(0xa8936e, 1);
+        g.fillRect(cx - 24, cy + 9, 48, 4);
+        g.fillStyle(0x8a3c2e, 0.9);
+        for (let k = 0; k < 4; k++) g.fillCircle(cx - 9 + k * 6, cy - 4 + (k % 2) * 3, 1.3);
+        break;
+      }
+    }
+    if (d.found && d.kind !== 'fossil') {
+      const t = (time * 0.0015) % 1;
+      g.fillStyle(0xfff3b0, 1 - t);
+      g.fillCircle(cx + Math.sin(time * 0.002) * 10, cy - 10 - t * 6, 1.2);
+    }
+  }
+}

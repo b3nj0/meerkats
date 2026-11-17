@@ -13,6 +13,9 @@ export interface NeighborPack {
   last: { total: number; tier: string } | null;
   /** Won over at a Grand Banquet feast: sends gifts every morning. */
   partner: boolean;
+  /** Pageant League: how good their burrow is (grows each season) and this year's points. */
+  skill: number;
+  points: number;
 }
 
 export interface TradeOffer {
@@ -34,9 +37,15 @@ export interface Visitor {
 
 export function makeNeighbors(): NeighborPack[] {
   return [
-    { id: 1, name: 'Dune Ridge Mob', side: -1, relation: 20, color: 0x4a90d9, last: null, partner: false },
-    { id: 2, name: 'Acacia Hollow Mob', side: 1, relation: 20, color: 0x9b59b6, last: null, partner: false },
+    { id: 1, name: 'Dune Ridge Mob', side: -1, relation: 20, color: 0x4a90d9, last: null, partner: false, skill: 9, points: 0 },
+    { id: 2, name: 'Acacia Hollow Mob', side: 1, relation: 20, color: 0x9b59b6, last: null, partner: false, skill: 10, points: 0 },
   ];
 }
 
 export const VISITOR_NAMES = ['Kofi', 'Naledi', 'Tau', 'Amara', 'Sipho', 'Lerato', 'Jabu', 'Zola'];
+
+/** Rival burrows improve a little every season, so a ribbon that won in Year 1 won't win in Year 3. */
+export const RIVAL_GROWTH = 0.55;
+export const RIVAL_MAX_SKILL = 19;
+/** League points for 1st, 2nd and 3rd place at a pageant. */
+export const LEAGUE_POINTS = [3, 2, 1];

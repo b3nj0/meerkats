@@ -3,8 +3,8 @@ import { CFG, SY } from '../config';
 import { T, type Grid } from '../sim/Grid';
 import { Rng } from '../sim/rng';
 
-export const FR = { SAND: 0, CLAY: 3, ROCK: 6, TUNNEL: 9, BOLT: 12, GRASS: 13 } as const;
-const FRAMES = 15;
+export const FR = { SAND: 0, CLAY: 3, ROCK: 6, TUNNEL: 9, BOLT: 12, GRASS: 13, STONE: 15, CRYSTAL: 18, FOG: 21 } as const;
+const FRAMES = 22;
 const S = CFG.TILE;
 
 function speckle(ctx: CanvasRenderingContext2D, ox: number, base: string, specks: string[], seed: number, count: number) {
@@ -61,6 +61,34 @@ export function makeTileset(scene: Phaser.Scene): void {
       }
     }
   }
+  // Ironstone: dark banded rock with rusty seams.
+  for (let v = 0; v < 3; v++) {
+    const ox = (FR.STONE + v) * S;
+    speckle(ctx, ox, '#5d5763', ['#4c4752', '#6b6571', '#575160'], 81 + v, 22);
+    ctx.fillStyle = '#8a5638';
+    ctx.fillRect(ox, 4 + v * 3, S, 1);
+    ctx.fillStyle = '#734631';
+    ctx.fillRect(ox, 11 - v, S, 1);
+  }
+  // Crystal Deep: violet stone with glinting crystal shards.
+  for (let v = 0; v < 3; v++) {
+    const ox = (FR.CRYSTAL + v) * S;
+    speckle(ctx, ox, '#3d3157', ['#33294a', '#4a3c68', '#2e2542'], 91 + v, 18);
+    const r = new Rng(101 + v);
+    for (let k = 0; k < 2; k++) {
+      const cx = ox + r.int(3, S - 4);
+      const cy = r.int(4, S - 3);
+      ctx.fillStyle = r.chance(0.5) ? '#9fe8ff' : '#e5a8ff';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 3);
+      ctx.lineTo(cx + 2, cy + 1);
+      ctx.lineTo(cx - 2, cy + 1);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+  // Unexplored dark: deep soil nobody has dug near yet.
+  speckle(ctx, FR.FOG * S, '#160e0a', ['#1d140e', '#120b08', '#21170f'], 111, 10);
   tex.refresh();
   tex.setFilter(Phaser.Textures.FilterMode.NEAREST);
 }
@@ -74,6 +102,7 @@ export function frameFor(g: Grid, i: number): number {
   const x = g.xOf(i);
   const y = g.yOf(i);
   const v = hash(x, y) % 3;
+  if (y >= SY && !g.revealed[i] && g.solidAt(i)) return FR.FOG;
   switch (t) {
     case T.Sand:
       return y === SY ? FR.GRASS + (v % 2) : FR.SAND + v;
@@ -81,6 +110,10 @@ export function frameFor(g: Grid, i: number): number {
       return y === SY ? FR.GRASS + (v % 2) : FR.CLAY + v;
     case T.Rock:
       return FR.ROCK + v;
+    case T.Stone:
+      return FR.STONE + v;
+    case T.Crystal:
+      return FR.CRYSTAL + v;
     case T.Tunnel:
       return FR.TUNNEL + v;
     case T.BoltHole:

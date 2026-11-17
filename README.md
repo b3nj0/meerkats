@@ -5,6 +5,7 @@ This PoC covers **all four spec milestones**:
 - **M1 + M2:** the cutaway burrow, digging, Tier 1 rooms, the day/night loop, foraging, the Martial Eagle and the Cape Cobra, Sentry alarms, bolt-holes and the Sand-Kick Mob.
 - **M3:** the 4-season weather loop, Sniff & Dig, accessory crafting, and three 15-second room mini-games.
 - **M4:** Tier 2/3 grand rooms, spatial synergies, room themes, neighbouring packs that visit to trade, and the seasonal Burrow Pageant.
+- **Progression:** the 📖 Colony Chronicle (six chapters of goals with rewards, such as meerkat slots and better picks), four soil strata (Topsand, Red Clay, Ironstone, Crystal Deep) hidden in the dark until you dig near them, buried discoveries (6 fossils, an underground spring, the Great Geode and the First Burrow), and a yearly Pageant League. Rival mobs improve each season, the Elders' standards rise each year, and the Kalahari Cup goes to the colony on top after the Long Dry.
 - **Beyond the milestones:** pups and mentorship, skill traits and comedy quirks, Role Mastery stars, the Grand Banquet Hall, a mini-game in every room except the Den, seven craftable accessories, the jackal, scorpion and honey badger, save/load, gamepad controls, and an iOS (Capacitor) project.
 
 ## Run it
@@ -31,7 +32,8 @@ npm run build      # static build in dist/
 | Roles & gear | tap a meerkat in the 🐾 Mob list to open its card | same |
 | Room card (themes, play, craft) | tap any built room | same |
 | Trade | tap a visiting scout (💬 bubble) | same |
-| Pageant preview, synergies, blueprints | 🏆 button in the top bar | same |
+| Pageant preview, league, synergies, blueprints | 🏆 button in the top bar | same |
+| Colony Chronicle (goals, strata, discoveries) | tap the 📖 panel at the top right | same |
 | Sniff & Dig | 👃 button (Golden Sun and the Long Dry only) | same |
 | Bolt-hole | 🕳️ tool, tap the ground | same |
 | Evacuate | 📯 Alarm button or `Space` | Alarm button |
@@ -56,6 +58,7 @@ Dev-only keys (also enabled with `?debug`):
 - `M` gives 10 🌾, 10 💎, 5 ⭐ and a full pantry.
 - `G` runs a Burrow Pageant now and `V` sends a visiting scout.
 - `J` jackal, `B` honey badger, `K` scorpion, `U` pup.
+- `R` lights up the whole underground and grants every pick. `L` completes the current Chronicle chapter.
 
 In devtools, `window.world` is the live simulation and `window.game` is the Phaser game.
 

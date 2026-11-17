@@ -2,10 +2,17 @@
 export const CFG = {
   TILE: 16,
   W: 96,
-  H: 48,
+  /** 64 rows: sky, then four strata down to the First Burrow at the bottom. */
+  H: 64,
   /** First ground row. Row SURFACE_Y - 1 is the walkable desert surface. */
   SURFACE_Y: 10,
   SAND_DEPTH: 12,
+  /** Depth (rows below the surface) where Ironstone and then the Crystal Deep begin. */
+  STONE_DEPTH: 24,
+  CRYSTAL_DEPTH: 38,
+  /** Rows below the surface that are visible from the start; deeper soil is dark until dug near. */
+  FOG_FREE: 8,
+  REVEAL_RADIUS: 3,
   ENTRANCE_X: 24,
 
   START_MEERKATS: 3,
@@ -24,6 +31,8 @@ export const CFG = {
 
   DIG_SAND: 1.2,
   DIG_CLAY: 2.6,
+  DIG_STONE: 4,
+  DIG_CRYSTAL: 5,
   BUILD_PERCH: 6,
 
   BACKPACK_SLOTS: 4,
@@ -45,6 +54,8 @@ export const CFG = {
   SEASON_DAYS: 5,
   GEM_CHANCE_SAND: 0.03,
   GEM_CHANCE_CLAY: 0.08,
+  GEM_CHANCE_STONE: 0.12,
+  GEM_CHANCE_CRYSTAL: 0.25,
   /** Golden Sun heatwave window, 12 PM to 3 PM, as fractions of the day. */
   HEAT_START: 0.25,
   HEAT_END: 0.375,

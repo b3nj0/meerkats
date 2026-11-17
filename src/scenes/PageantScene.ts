@@ -49,7 +49,7 @@ export class PageantScene extends Phaser.Scene {
         .text(x, y, s, { fontFamily: FONT, fontSize: `${size}px`, color, fontStyle: bold ? 'bold' : 'normal', wordWrap: { width: pw - 40 } })
         .setResolution(2);
 
-    txt(px + 18, py + 12, `🏆 Burrow Pageant: end of ${r.seasonName}`, compact ? 17 : 21, '#ffe14d', true);
+    txt(px + 18, py + 12, `🏆 Burrow Pageant: ${r.seasonName}, Year ${r.year}`, compact ? 17 : 21, '#ffe14d', true);
     let y = py + (compact ? 36 : 44);
 
     // Three visiting Elders
@@ -87,11 +87,18 @@ export class PageantScene extends Phaser.Scene {
       const ribbonColor = r.ribbon === 'gold' ? '#ffd23f' : r.ribbon === 'silver' ? '#dfe6ee' : r.ribbon === 'bronze' ? '#e0a36b' : '#e8d6b8';
       txt(px + 18, endY, `${r.total} / 20 stars  ·  ${RIBBON_LABEL[r.ribbon]}`, compact ? 16 : 19, ribbonColor, true);
       let ry = endY + (compact ? 22 : 30);
+      if (r.cup) {
+        txt(px + 18, ry, r.cup.you ? '🏆 You won the KALAHARI CUP! 🏆' : `🏆 Kalahari Cup: the ${r.cup.winner}`, compact ? 14 : 17, r.cup.you ? '#ffd23f' : '#e8d6b8', true);
+        ry += compact ? 20 : 26;
+      }
       const lines = [...r.rewards];
       txt(px + 18, ry, lines.map((l) => `• ${l}`).join('\n'), compact ? 11 : 13, '#b8f28c');
       ry += lines.length * (compact ? 14 : 17) + 6;
       const rivals = r.rivals.map((v) => `${v.name}: ${v.total}★`).join('   ');
       txt(px + 18, ry, `Friendly rivals: ${rivals}`, compact ? 10 : 12, '#c8b89a');
+      ry += compact ? 14 : 17;
+      const table = r.league.map((row, i) => `${i + 1}. ${row.you ? 'You' : row.name.replace(/ Mob$/, '')} ${row.points}`).join('  ·  ');
+      txt(px + 18, ry, `${r.cup ? 'Final league table' : `Year ${r.year} league`}: ${table}`, compact ? 10 : 12, '#ffe9a8');
       playSfx(r.ribbon === 'none' ? 'join' : 'success');
       const done = new Button(this, 'Hooray! Back to the burrow', 230, compact ? 34 : 40, () => this.close(), {
         color: 0x5d8a3a,

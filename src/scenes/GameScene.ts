@@ -6,7 +6,7 @@ import { playSfx, unlockAudio } from '../render/Sfx';
 import { SkyRenderer, nightness } from '../render/SkyRenderer';
 import { WeatherRenderer } from '../render/WeatherRenderer';
 import {
-  cobraLabel, drawBadger, drawBlocked, drawCobra, drawEagle, drawJackal, drawJobs, drawNodes, drawRoom, drawScorpion, drawSynergies, drawVisitor,
+  cobraLabel, drawBadger, drawBlocked, drawCobra, drawDiscoveries, drawEagle, drawJackal, drawJobs, drawNodes, drawRoom, drawScorpion, drawSynergies, drawVisitor,
   makeLabel, predatorLabel,
 } from '../render/WorldDraw';
 import { saveWorld } from '../save';
@@ -17,6 +17,7 @@ import type { Badger } from '../sim/predators/Badger';
 import type { Visitor } from '../sim/Neighbors';
 import type { Meerkat } from '../sim/Meerkat';
 import type { Cobra } from '../sim/predators/Cobra';
+import { DISCOVERY_DEFS } from '../sim/Strata';
 import { ROOM_DEFS, roomContains, type Room, type RoomType } from '../sim/Rooms';
 import type { World } from '../sim/World';
 import type { HudScene } from './HudScene';
@@ -62,6 +63,7 @@ export class GameScene extends Phaser.Scene {
   private minZoom = 0.5;
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private predLabels = new Map<number, Phaser.GameObjects.Text>();
+  private findLabels = new Map<number, Phaser.GameObjects.Text>();
   private saveT: number = CFG.AUTOSAVE;
   /** Real-time camera follow of the gamepad Alpha. */
   private padActive = false;
@@ -219,6 +221,8 @@ export class GameScene extends Phaser.Scene {
       kb.on('keydown-B', () => this.world.debugBadger());
       kb.on('keydown-K', () => this.world.debugScorpion());
       kb.on('keydown-U', () => this.world.debugPup());
+      kb.on('keydown-R', () => this.world.debugRevealDeep());
+      kb.on('keydown-L', () => this.world.debugChronicle());
     }
     this.keys = kb.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,Q,Z') as Record<string, Phaser.Input.Keyboard.Key>;
   }
@@ -568,6 +572,20 @@ export class GameScene extends Phaser.Scene {
     for (const [id, lbl] of this.roomLabels) if (!seen.has(id)) (lbl.destroy(), this.roomLabels.delete(id));
 
     drawSynergies(this.roomGfx, w, time);
+    drawDiscoveries(this.roomGfx, w, time);
+    for (const d of w.discoveries) {
+      const show = d.found || d.hinted;
+      let lbl = this.findLabels.get(d.id);
+      if (!show) continue;
+      if (!lbl) {
+        lbl = makeLabel(this, 6);
+        this.findLabels.set(d.id, lbl);
+      }
+      const def = DISCOVERY_DEFS[d.kind];
+      const text = d.found ? `${def.icon} ${d.kind === 'fossil' ? `Fossil: ${d.name}` : def.name}` : `🗺️ ${def.name}?`;
+      if (lbl.text !== text) lbl.setText(text);
+      lbl.setPosition((d.x + 0.5) * S, (d.y - (d.kind === 'ruin' ? 1.4 : 0.6)) * S);
+    }
     this.nodeGfx.clear();
     drawNodes(this.nodeGfx, w, time);
     for (const v of w.visitors) drawVisitor(this.nodeGfx, w, v, time);
