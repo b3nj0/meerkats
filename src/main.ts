@@ -8,6 +8,18 @@ import { lockLandscape } from './platform';
 
 lockLandscape();
 
+// Chrome on iPad can keep laying the page out at the portrait size (820x1042) after rotating to
+// landscape, even across reloads, while the window is really 1180 wide. outerWidth and innerHeight
+// still report the true visible area, so size the game container from those, not from CSS layout.
+const appEl = document.getElementById('app')!;
+function fitApp(): void {
+  const touch = navigator.maxTouchPoints > 0;
+  const w = touch && outerWidth > innerWidth + 40 ? outerWidth : innerWidth;
+  appEl.style.width = `${w}px`;
+  appEl.style.height = `${innerHeight}px`;
+}
+fitApp();
+
 const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'app',
@@ -27,7 +39,7 @@ const game = new Phaser.Game({
 // canvas and cameras stuck at the old portrait size with black filling the rest. Re-measure a few
 // times after any rotation or viewport change, and force every scene's main camera to the new size.
 const remeasure = () => {
-  for (const ms of [50, 250, 600, 1200]) setTimeout(() => { game.scale.getParentBounds(); game.scale.refresh(); }, ms);
+  for (const ms of [50, 250, 600, 1200]) setTimeout(() => { fitApp(); game.scale.getParentBounds(); game.scale.refresh(); }, ms);
 };
 window.addEventListener('orientationchange', remeasure);
 window.addEventListener('resize', remeasure);
@@ -45,7 +57,7 @@ if (new URLSearchParams(location.search).has('debug')) {
     'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:99;pointer-events:none;' +
     'background:rgba(200,0,0,.85);color:#fff;font:bold 16px/1.4 monospace;padding:10px 14px;white-space:pre;border-radius:8px;';
   document.body.appendChild(box);
-  const app = document.getElementById('app')!;
+  const app = appEl;
   setInterval(() => {
     const r = (el: Element) => { const b = el.getBoundingClientRect(); return `${Math.round(b.width)}x${Math.round(b.height)}`; };
     const vv = window.visualViewport;
