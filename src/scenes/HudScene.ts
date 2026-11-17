@@ -17,6 +17,8 @@ import type { GameScene, Tool } from './GameScene';
 
 const S = CFG.TILE;
 const TOP_H = 40;
+/** Height of the extra stats row the top bar grows when the screen is too narrow for one row. */
+const ROW2_H = 26;
 
 interface ToolDef {
   key: string;
@@ -103,6 +105,8 @@ export class HudScene extends Phaser.Scene {
   private edgeIcons: Phaser.GameObjects.Text[] = [];
   private panels: Phaser.Geom.Rectangle[] = [];
   private compact = false;
+  private twoRow = false;
+  private topH = TOP_H;
   private sniffShown = false;
   private modal: Phaser.GameObjects.Container | null = null;
   private modalRefresh: (() => void) | null = null;
@@ -595,7 +599,11 @@ export class HudScene extends Phaser.Scene {
 
     this.topBar.clear();
     this.topBar.fillStyle(0x2b1d14, 0.88);
-    this.topBar.fillRect(0, 0, W, TOP_H);
+    this.topBar.fillRect(0, 0, W, this.topH);
+    if (this.twoRow) {
+      this.topBar.fillStyle(0xffe6b0, 0.12);
+      this.topBar.fillRect(0, TOP_H, W, 1);
+    }
     this.dayText.setFontSize(this.compact ? 12 : 15).setPosition(12 + ins.left, TOP_H / 2);
     this.statsText.setFontSize(this.compact ? 12 : 15);
     let x = W - 8 - 19 - ins.right;
@@ -641,7 +649,7 @@ export class HudScene extends Phaser.Scene {
     this.hint.setPosition(W / 2, (this.buildOpen ? py - pbh / 2 : H - bh) - 10).setFontSize(this.compact ? 10 : 12);
     this.hint.setWordWrapWidth(Math.min(600, W - 30));
 
-    this.panels = [new Phaser.Geom.Rectangle(0, 0, W, TOP_H)];
+    this.panels = [new Phaser.Geom.Rectangle(0, 0, W, this.topH)];
     this.layoutRoster();
   }
 
@@ -659,10 +667,10 @@ export class HudScene extends Phaser.Scene {
     }
     const rowW = this.compact ? 156 : 186;
     const L = 8 + this.inset.left;
-    this.rosterToggle.setPosition(L + 55, TOP_H + 18).setLabel(`🐾 Mob (${ms.length}) ${this.rosterOpen ? '▾' : '▸'}`);
+    this.rosterToggle.setPosition(L + 55, this.topH + 18).setLabel(`🐾 Mob (${ms.length}) ${this.rosterOpen ? '▾' : '▸'}`);
     const rowH = this.compact ? 32 : 36;
     this.rosterBtns.forEach((b, i) => {
-      const y = TOP_H + 48 + i * (rowH + 4);
+      const y = this.topH + 48 + i * (rowH + 4);
       b.resize(rowW, rowH).setPosition(L + 34 + rowW / 2, y).setVisible(this.rosterOpen);
       this.rosterFocus[i].resize(30, rowH).setPosition(L + 15, y).setVisible(this.rosterOpen);
     });
@@ -686,9 +694,19 @@ export class HudScene extends Phaser.Scene {
       `${PHASE_ICON[phase]} Day ${w.clock.day} ${this.compact ? '' : `· ${phase} `}${w.clock.timeLabel}${w.nightFast ? ' ⏩' : ''}   ${season}${weather ? `  ${weather}` : ''}`,
     );
     this.statsText.setText(`🍓 ${w.food}/${w.foodCap}  🌾 ${w.materials.grass}  💎 ${w.materials.gems}  ⭐ ${w.prestige}  😊 ${Math.round(w.morale)}`);
+    // Food, grass and gems must always be visible: if they don't fit beside the day line
+    // (iPad portrait, narrow windows), the top bar grows a second row for them.
     const statsX = this.dayText.x + this.dayText.width + (this.compact ? 10 : 22);
     const room = this.saveBtn.x - 24 - statsX;
-    this.statsText.setPosition(statsX, TOP_H / 2).setVisible(room > this.statsText.width * 0.9);
+    const sw = this.statsText.width;
+    const wantTwoRow = this.twoRow ? room < sw + 40 : room < sw;
+    if (wantTwoRow !== this.twoRow) {
+      this.twoRow = wantTwoRow;
+      this.topH = wantTwoRow ? TOP_H + ROW2_H : TOP_H;
+      this.layout();
+    }
+    if (this.twoRow) this.statsText.setPosition(this.dayText.x, TOP_H + ROW2_H / 2);
+    else this.statsText.setPosition(statsX, TOP_H / 2);
 
     const sp = this.gs.paused && !this.scene.isActive('MiniGame') ? 0 : this.gs.speed;
     this.speedBtns.forEach((b, i) => b.setSelected(i === sp));
@@ -770,9 +788,9 @@ export class HudScene extends Phaser.Scene {
       ? `🎯 Goals ${done}/${goals.length}  (tap to hide)\n` + todo.map(([, s]) => `⬜ ${s}`).join('\n') + (todo.length ? '' : '🏆 All done!')
       : `🎯 Goals ${done}/${goals.length} ▸`;
     if (this.goals.text !== goalText) this.goals.setText(goalText);
-    this.goals.setPosition(W - 8, TOP_H + 8).setFontSize(this.compact ? 10 : 12);
+    this.goals.setPosition(W - 8, this.topH + 8).setFontSize(this.compact ? 10 : 12);
 
-    let ty = TOP_H + 8;
+    let ty = this.topH + 8;
     for (const t of [...this.toasts]) {
       t.life -= dt;
       if (t.life <= 0) {
@@ -805,7 +823,7 @@ export class HudScene extends Phaser.Scene {
     }
     this.edge.clear();
     this.edgeIcons.forEach((t) => t.setVisible(false));
-    const top = TOP_H + 24;
+    const top = this.topH + 24;
     const bottom = H - 90;
     threats.slice(0, 3).forEach((t, i) => {
       const sx = (t.x - view.x) * cam.zoom;
