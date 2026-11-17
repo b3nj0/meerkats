@@ -55,6 +55,7 @@ if (new URLSearchParams(location.search).has('debug')) {
       .join('\n');
     box.textContent = [
       `inner     ${innerWidth}x${innerHeight}`,
+      `outer     ${outerWidth}x${outerHeight}`,
       `client    ${document.documentElement.clientWidth}x${document.documentElement.clientHeight}`,
       `visualVP  ${vv ? `${Math.round(vv.width)}x${Math.round(vv.height)} scale ${vv.scale.toFixed(2)}` : '-'}`,
       `screen    ${screen.width}x${screen.height} ${screen.orientation?.type ?? ''}`,
